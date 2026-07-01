@@ -248,7 +248,7 @@ class UnitreeWebRTCConnection(Resource):
 
     @simple_mcache
     def raw_lidar_stream(self) -> Observable[RawLidarMsg]:
-        return backpressure(self.unitree_sub_stream(RTC_TOPIC["ULIDAR_ARRAY"]))
+        return backpressure(self.unitree_sub_stream(RTC_TOPIC["ULIDAR_ARRAY"])) #获取雷达原始数据，调用api
 
     @simple_mcache
     def raw_odom_stream(self) -> Observable[Pose]:

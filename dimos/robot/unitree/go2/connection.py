@@ -231,7 +231,7 @@ class GO2Connection(Module, Camera, Pointcloud):
 
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
-        self.connection = make_connection(
+        self.connection = make_connection( # 从硬件中获取数据 UnitreeWebRTCConnection
             self.config.ip, self.config.g, aes_128_key=self.config.aes_128_key
         )
 
