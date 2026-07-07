@@ -218,14 +218,14 @@ FastLio2.global_map
 
 所以在导航和 FastLio2 的结合里，blueprint 同时承担了两类职责：
 
-1. **传参职责**  
+1. **传参职责**
    例如：
    - `host_ip`
    - `lidar_ip`
    - `config`
    - `map_freq`
 
-2. **拓扑描述职责**  
+2. **拓扑描述职责**
    例如：
    - `FastLio2` 有哪些输出端口
    - 这些端口默认叫什么
@@ -429,7 +429,7 @@ SomeNativeModule.blueprint(**kwargs)
 
 这里有两个关键点。
 
-第一，**字段名不是随意的**。  
+第一，**字段名不是随意的**。
 `SomeNativeModule.blueprint(max_speed=1.0)` 传进去的 key，必须能被该模块的 `config` 类型接住。DimOS 这里不是松散字典，而是：
 
 ```python
@@ -483,7 +483,7 @@ cmd.extend(self.config.extra_args)
 
 `FastLio2Config` 就是典型例子：它不直接传 `config: Path` 和 `mount: Pose`，而是在 `model_post_init()` 里把它们转换成更适合 C++ 消费的 `config_path: str` 和 `init_pose: list[float]`。
 
-最后，C++ 侧通常不会再定义一个自动同步的“参数 schema”。它只是用一个很轻量的 helper 解析 argv，例如 [`dimos_native_module.hpp`](/home/longyuxiang/LYX/Progress/Dimensional/dimos/dimos/hardware/sensors/lidar/common/dimos_native_module.hpp)：
+最后，C++ 侧通常不会再定义一个自动同步的“参数 schema”。它只是用一个很轻量的 helper 解析 argv，例如 [`dimos/hardware/sensors/lidar/common/dimos_native_module.hpp`](/dimos/hardware/sensors/lidar/common/dimos_native_module.hpp)：
 
 ```cpp
 for (int i = 1; i < argc; ++i) {
@@ -1209,11 +1209,10 @@ FAST-LIO-NON-ROS
 
 编译入口在：
 
-- [`module.py`](/home/longyuxiang/LYX/Progress/Dimensional/dimos/dimos/hardware/sensors/lidar/fastlio2/module.py)
-- [`cpp/main.cpp`](/home/longyuxiang/LYX/Progress/Dimensional/dimos/dimos/hardware/sensors/lidar/fastlio2/cpp/main.cpp)
-- [`cpp/README.md`](/home/longyuxiang/LYX/Progress/Dimensional/dimos/dimos/hardware/sensors/lidar/fastlio2/cpp/README.md)
+- [`dimos/hardware/sensors/lidar/fastlio2/module.py`](/dimos/hardware/sensors/lidar/fastlio2/module.py)
+- [`dimos/hardware/sensors/lidar/fastlio2/cpp/main.cpp`](/dimos/hardware/sensors/lidar/fastlio2/cpp/main.cpp)
 
-`cpp/README.md` 说明得很直接：`fastlio2_native` 会把 Livox SDK2 直接绑定到 `FAST-LIO-NON-ROS`，然后把注册点云和里程计发布成 DimOS/LCM 消息。
+`fastlio2_native` 会把 Livox SDK2 直接绑定到 `FAST-LIO-NON-ROS`，然后把注册点云和里程计发布成 DimOS/LCM 消息。
 
 所以从 DimOS 的角度看，FAST-LIO 不是一个外部 ROS 节点，而是一个被 DimOS 自己启动和管理的 native module。
 
@@ -1230,10 +1229,10 @@ class FastLio2(NativeModule, perception.Lidar, perception.Odometry, mapping.Glob
 
 这个类做了三件事：
 
-1. 声明模块能力和 stream 接口  
+1. 声明模块能力和 stream 接口
    `lidar`、`odometry`、`global_map` 这三个输出会被其他模块自动连接。
 
-2. 声明如何构建和启动 native binary  
+2. 声明如何构建和启动 native binary
    `FastLio2Config` 里写明：
 
 ```python
@@ -1242,7 +1241,7 @@ executable: str = "result/bin/fastlio2_native"
 build_command: str | None = "nix build .#fastlio2_native"
 ```
 
-3. 把 Python 侧配置转换成 C++ 启动参数  
+3. 把 Python 侧配置转换成 C++ 启动参数
    `model_post_init()` 会把：
 
 - `config` 解析成绝对路径 `config_path`
@@ -1403,7 +1402,7 @@ NativeModule.start() 把两者拼成同一个 argv
 
 ### Native Runtime
 
-真正的 FAST-LIO 工作主体在 [`cpp/main.cpp`](/home/longyuxiang/LYX/Progress/Dimensional/dimos/dimos/hardware/sensors/lidar/fastlio2/cpp/main.cpp)。
+真正的 FAST-LIO 工作主体在 [`dimos/hardware/sensors/lidar/fastlio2/cpp/main.cpp`](/dimos/hardware/sensors/lidar/fastlio2/cpp/main.cpp)。
 
 启动时，`fastlio2_native` 会从 `NativeModule` CLI 读取这些关键参数：
 

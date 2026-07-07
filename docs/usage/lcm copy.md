@@ -37,7 +37,7 @@ producer module
 
 ## DimOS 里的两种 LCM transport
 
-源码位置：[`dimos/core/transport.py`](/home/longyuxiang/LYX/Progress/Dimensional/dimos/dimos/core/transport.py:79)
+源码位置：[`dimos/core/transport.py`](/dimos/core/transport.py)
 
 ### `LCMTransport`
 
@@ -154,7 +154,7 @@ pLCMTransport = 借 LCM 通道传 Python pickle
 
 ## 在 blueprint 里怎么被选中
 
-源码位置：[`dimos/core/coordination/module_coordinator.py`](/home/longyuxiang/LYX/Progress/Dimensional/dimos/dimos/core/coordination/module_coordinator.py:574)
+源码位置：[`dimos/core/coordination/module_coordinator.py`](/dimos/core/coordination/module_coordinator.py)
 
 当 `ModuleCoordinator.build()` 给 stream 分配 transport 时，如果你没有手动 override，会走默认规则：
 
@@ -206,7 +206,7 @@ self.register_disposable(
 模块 stop() 时自动取消订阅
 ```
 
-`FastLio2` 就用了这种方式来监听自己输出的 `odometry`，再额外发布 TF：[module.py](/home/longyuxiang/LYX/Progress/Dimensional/dimos/dimos/hardware/sensors/lidar/fastlio2/module.py:167)
+`FastLio2` 就用了这种方式来监听自己输出的 `odometry`，再额外发布 TF：[`dimos/hardware/sensors/lidar/fastlio2/module.py`](/dimos/hardware/sensors/lidar/fastlio2/module.py#L21)
 
 ## 在 native module 里怎么用
 
@@ -324,14 +324,14 @@ pLCMTransport: pickled Python bytes
 
 ## 相关源码
 
-- [`dimos/core/transport.py`](/home/longyuxiang/LYX/Progress/Dimensional/dimos/dimos/core/transport.py:79)
-- [`dimos/protocol/pubsub/impl/lcmpubsub.py`](/home/longyuxiang/LYX/Progress/Dimensional/dimos/dimos/protocol/pubsub/impl/lcmpubsub.py:75)
-- [`dimos/protocol/pubsub/encoders.py`](/home/longyuxiang/LYX/Progress/Dimensional/dimos/dimos/protocol/pubsub/encoders.py:87)
-- [`dimos/core/coordination/module_coordinator.py`](/home/longyuxiang/LYX/Progress/Dimensional/dimos/dimos/core/coordination/module_coordinator.py:574)
-- [`dimos/core/native_module.py`](/home/longyuxiang/LYX/Progress/Dimensional/dimos/dimos/core/native_module.py:221)
+- [`dimos/core/transport.py`](/dimos/core/transport.py)
+- [`dimos/protocol/pubsub/impl/lcmpubsub.py`](/dimos/protocol/pubsub/impl/lcmpubsub.py)
+- [`dimos/protocol/pubsub/encoders.py`](/dimos/protocol/pubsub/encoders.py)
+- [`dimos/core/coordination/module_coordinator.py`](/dimos/core/coordination/module_coordinator.py)
+- [`dimos/core/native_module.py`](/dimos/core/native_module.py)
 
 ## 进一步阅读
 
-- [Transports](/home/longyuxiang/LYX/Progress/Dimensional/dimos/docs/usage/transports/index.md)
-- [Blueprints](/home/longyuxiang/LYX/Progress/Dimensional/dimos/docs/usage/blueprints.md)
-- [Modules](/home/longyuxiang/LYX/Progress/Dimensional/dimos/docs/usage/modules.md)
+- [Transports](/docs/usage/transports/index.md)
+- [Blueprints](/docs/usage/blueprints.md)
+- [Modules](/docs/usage/modules.md)

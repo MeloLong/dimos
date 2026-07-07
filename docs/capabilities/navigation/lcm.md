@@ -21,7 +21,7 @@ Blueprint 负责把模块接成图，LCM 是默认的数据总线，worker 进�
 
 ## 以 G1 onboard 为例
 
-源码：[`unitree_g1_onboard.py`](/home/longyuxiang/LYX/Progress/Dimensional/dimos/dimos/robot/unitree/g1/blueprints/primitive/unitree_g1_onboard.py)
+源码：[`unitree_g1_onboard.py`](/dimos/robot/unitree/g1/blueprints/primitive/unitree_g1_onboard.py)
 
 ```python
 _unitree_g1_onboard = autoconnect(
@@ -68,7 +68,7 @@ Python worker process
 
 真正把 blueprint 变成运行中系统的是 `ModuleCoordinator.build()`。
 
-源码：[`module_coordinator.py`](/home/longyuxiang/LYX/Progress/Dimensional/dimos/dimos/core/coordination/module_coordinator.py)
+源码：[`module_coordinator.py`](/dimos/core/coordination/module_coordinator.py)
 
 大致流程：
 
@@ -239,7 +239,7 @@ transport = pLCMTransport(topic) if use_pickled else LCMTransport(topic, stream_
 
 ## `LCMTransport`
 
-源码：[`transport.py`](/home/longyuxiang/LYX/Progress/Dimensional/dimos/dimos/core/transport.py)
+源码：[`transport.py`](/dimos/core/transport.py)
 
 `LCMTransport` 用于有 LCM schema / LCM 编码能力的消息：
 
@@ -311,8 +311,8 @@ callback 收到 decoded message
 
 相关实现：
 
-- [`SHMTransport`](/home/longyuxiang/LYX/Progress/Dimensional/dimos/dimos/core/transport.py)
-- [`shmpubsub.py`](/home/longyuxiang/LYX/Progress/Dimensional/dimos/dimos/protocol/pubsub/impl/shmpubsub.py)
+- [`SHMTransport`](/dimos/core/transport.py)
+- [`shmpubsub.py`](/dimos/protocol/pubsub/impl/shmpubsub.py)
 
 在 `unitree_g1_onboard.py` 里没有显式 `.transports(...)`，因此该 blueprint 自身的 stream 默认会走 LCM / pLCM。更大的导航 blueprint 可以根据需要显式覆盖某些大流量 stream 的 transport。
 
