@@ -28,6 +28,7 @@ from dimos.navigation.basic_path_follower.module import BasicPathFollower
 from dimos.navigation.movement_manager.movement_manager import MovementManager
 from dimos.navigation.nav_3d.mls_planner.goal_relay import GoalRelay
 from dimos.navigation.nav_3d.mls_planner.mls_planner_native import MLSPlannerNative
+from dimos.protocol.pubsub.patterns import Glob
 from dimos.robot.deeprobotics.m20.connection import M20Connection
 from dimos.robot.deeprobotics.m20.tf import M20TF
 from dimos.visualization.rerun.bridge import RerunBridgeModule
@@ -69,12 +70,39 @@ def m20_rerun_blueprint() -> Any:
 rerun = autoconnect(
     RerunBridgeModule.blueprint(
         blueprint=m20_rerun_blueprint,
-        memory_limit="1GB",
+        memory_limit="15GB",
         max_hz={
             "world/color_image": 0,
             "world/color_image_rear": 0,
             "world/global_map": 1.0,
             "world/local_map": 2.0,
+        },
+        latest_only_entities=[
+            "world/slam_aligned_points",
+            "world/local_map",
+            "world/global_map",
+            "world/global_costmap",
+        ],
+        use_message_timestamps=False,
+        debug_stats=True,
+        debug_stats_interval=5.0,
+        debug_stats_entities=[
+            "world/color_image",
+            "world/color_image_rear",
+            "world/slam_aligned_points",
+            "world/global_map",
+            "world/local_map",
+            Glob("world/**image**"),
+            Glob("world/**map**"),
+            Glob("world/**point**"),
+            Glob("world/**costmap**"),
+        ],
+        debug_low_fps_warn={
+            "world/color_image": 20.0,
+            "world/color_image_rear": 20.0,
+            "world/slam_aligned_points": 9.8,
+            "world/local_map": 4.5,
+            "world/global_map": 0.8,
         },
         visual_override={
             "world/node_edges": _node_edges_on_surface,
@@ -133,7 +161,7 @@ m20_nav_3d = autoconnect(
         world_frame="map",
         voxel_size=voxel_size,
         robot_height=0.6,
-        wall_clearance_m=0.2,
+        wall_clearance_m=0.375,
         wall_buffer_m=0.75,
         wall_buffer_weight=100.0,
         step_threshold_m=0.25,
@@ -147,7 +175,12 @@ m20_nav_3d = autoconnect(
 ).global_config(n_workers=10)
 
 m20_api = autoconnect(
-    m20_nav,
+    m20_nav_3d,
     M20Connection.blueprint(),
-    MovementManager.blueprint(),
-).global_config(n_workers=3)
+    M20TF.blueprint().remappings([(M20TF, "odometry", "dimos/slam_odom")]),
+).global_config(
+    n_workers=10,
+    robot_model="m20",
+    robot_width=0.45,
+    robot_rotation_diameter=1.2,
+)

@@ -36,6 +36,9 @@ from dimos.robot.deeprobotics.m20.blueprints.basic import (
     m20_rerun_blueprint,
 )
 from dimos.robot.deeprobotics.m20.connection import M20Connection
+from dimos.robot.deeprobotics.m20.nav.fixed_forward_path_planner import (
+    FixedForwardPathPlanner,
+)
 from dimos.robot.deeprobotics.m20.nav.odom2posestamped import OdomToPoseStamped
 from dimos.robot.deeprobotics.m20.tf import M20TF
 from dimos.visualization.vis_module import vis_module
@@ -129,21 +132,35 @@ m20_simple_nav = autoconnect(
     #     ),
     #     initial_safe_radius_meters=m20_width_clearance + m20_safe_radius_margin,
     # ),
-    MLSPlannerNative.blueprint(
-        world_frame="map",
-        voxel_size=voxel_size,
-        robot_height=1.2,
-        wall_clearance_m=0.2,
-        wall_buffer_m=0.75,
-        wall_buffer_weight=100.0,
-        step_threshold_m=0.16,
-        step_penalty_weight=1.0,
-        viz_publish_hz=0.0,
+    # MLSPlannerNative.blueprint(
+    #     world_frame="map",
+    #     voxel_size=voxel_size,
+    #     robot_height=1.2,
+    #     wall_clearance_m=0.2,
+    #     wall_buffer_m=0.75,
+    #     wall_buffer_weight=100.0,
+    #     step_threshold_m=0.16,
+    #     step_penalty_weight=1.0,
+    #     viz_publish_hz=0.0,
+    # ).remappings(
+    #     [
+    #         (MLSPlannerNative, "path", "planner_path"),
+    #         # Use the incremental local_map + region_bounds pair from ray tracing.
+    #         (MLSPlannerNative, "global_map", "global_map_unused"),
+    #     ]
+    # ),
+    FixedForwardPathPlanner.blueprint(
+        path_length_m=4.0,
+        safety_extension_m=0.3,
+        sample_spacing_m=0.2,
+        corridor_radius_m=m20_width_clearance + m20_safe_radius_margin,
+        min_relative_z_m=-0.2,
+        max_relative_z_m=m20_height_clearance,
+        min_blocking_points=3,
     ).remappings(
         [
-            (MLSPlannerNative, "path", "planner_path"),
-            # Use the incremental local_map + region_bounds pair from ray tracing.
-            (MLSPlannerNative, "global_map", "global_map_unused"),
+            (FixedForwardPathPlanner, "path", "planner_path"),
+            (FixedForwardPathPlanner, "global_map", "global_map_unused"),
         ]
     ),
     OdomToPoseStamped.blueprint().remappings(
