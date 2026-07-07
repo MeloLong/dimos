@@ -3,11 +3,10 @@
     "dimos-repo": {
       "flake": false,
       "locked": {
-        "lastModified": 1779865691,
-        "narHash": "sha256-2CVWcov7DiC1qX/B/zFKDJiSYsnbrZ3FNT/viprFWTQ=",
-        "ref": "refs/heads/jeff/feat/g1_raycast",
-        "rev": "51666bcd298c1d08bdee179f176f45c0a7dd417d",
-        "revCount": 744,
+        "dirtyRev": "c49481b440ccc9b7f1bab7c4b4e69a7592c58263-dirty",
+        "dirtyShortRev": "c49481b-dirty",
+        "lastModified": 1782810076,
+        "narHash": "sha256-9ocRTqrxpGzEEszBIY3B+EJhTPfsrIU2/WFcsqAK9n0=",
         "type": "git",
         "url": "file:../../../.."
       },

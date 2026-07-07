@@ -804,7 +804,7 @@ registered_scan
 
 当模块内部字段名和希望连接的外部 stream 名不同，就用 `remappings()`。
 
-Nav Stack 的关键 remapping 在 [`dimos/navigation/cmu_nav/main.py`](/dimos/navigation/cmu_nav/main.py)：
+Nav Stack 的关键 remapping 在 [`dimos/navigation/nav_stack/main.py`](/dimos/navigation/nav_stack/main.py)：
 
 ```python
 remappings = [

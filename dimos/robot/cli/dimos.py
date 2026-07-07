@@ -93,6 +93,11 @@ def create_dynamic_callback():  # type: ignore[no-untyped-def]
     for field_name, field_info in fields.items():
         field_type = field_info.annotation
 
+        # Container generics (e.g. `tuple[ZenohQoS, ...]`) have no single-flag CLI
+        # representation; they're configured via env/JSON. Skip like arg_help does.
+        if isinstance(field_type, types.GenericAlias):
+            continue
+
         # Handle Optional types
         # Check for Optional/Union with None
         if get_origin(field_type) is type(str | None):
@@ -622,6 +627,15 @@ def lcmspy(ctx: typer.Context) -> None:
 
     sys.argv = ["lcmspy", *ctx.args]
     lcmspy_main()
+
+
+@main.command(context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
+def spy(ctx: typer.Context) -> None:
+    """Transport-agnostic pub/sub traffic spy (LCM or Zenoh)."""
+    from dimos.utils.cli.spy.run_spy import main as spy_main
+
+    sys.argv = ["spy", *ctx.args]
+    spy_main()
 
 
 @main.command(context_settings={"allow_extra_args": True, "ignore_unknown_options": True})

@@ -32,7 +32,8 @@ from dimos.core.global_config import GlobalConfig
 from dimos.core.module import Module, ModuleConfig
 from dimos.core.resource import CompositeResource
 from dimos.core.stream import In, Out
-from dimos.core.transport import LCMTransport, pSHMTransport
+from dimos.core.transport import pSHMTransport
+from dimos.core.transport_factory import make_transport
 from dimos.spec.perception import Camera, Pointcloud
 from dimos.utils.logging_config import setup_logger
 
@@ -67,6 +68,11 @@ class Go2Mode(str, Enum):
 class ConnectionConfig(ModuleConfig):
     ip: str = Field(default_factory=lambda m: m["g"].robot_ip)
     mode: Go2Mode = Go2Mode.DEFAULT
+    lidar: bool = True
+    camera: bool = True
+    # Top-level motion controller: "mcf" is the AI/sport mode that traverses
+    # terrain (stairs); "normal" is basic. None leaves the current mode as-is.
+    motion_mode: str | None = None
     # Per-device AES-128 key (Go2 fw >=1.1.15); defaults from GlobalConfig.
     aes_128_key: str | None = Field(default_factory=lambda m: m["g"].unitree_aes_128_key)
 
@@ -84,6 +90,7 @@ class Go2ConnectionProtocol(Protocol):
     def liedown(self) -> bool: ...
     def balance_stand(self) -> bool: ...
     def set_obstacle_avoidance(self, enabled: bool = True) -> None: ...
+    def set_motion_mode(self, name: str) -> None: ...
     def enable_rage_mode(self) -> bool: ...
     def publish_request(self, topic: str, data: dict) -> dict: ...  # type: ignore[type-arg]
 
@@ -177,6 +184,9 @@ class ReplayConnection(UnitreeWebRTCConnection, CompositeResource):
     def set_obstacle_avoidance(self, enabled: bool = True) -> None:
         pass
 
+    def set_motion_mode(self, name: str) -> None:
+        pass
+
     def enable_rage_mode(self) -> bool:
         return True
 
@@ -231,7 +241,7 @@ class GO2Connection(Module, Camera, Pointcloud):
 
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
-        self.connection = make_connection( # 从硬件中获取数据 UnitreeWebRTCConnection
+        self.connection = make_connection(  # 从硬件中获取数据 UnitreeWebRTCConnection
             self.config.ip, self.config.g, aes_128_key=self.config.aes_128_key
         )
 
@@ -249,16 +259,23 @@ class GO2Connection(Module, Camera, Pointcloud):
             self.color_image.publish(image)
             self._latest_video_frame = image
 
-        self.register_disposable(self.connection.lidar_stream().subscribe(self.lidar.publish))
+        if self.config.lidar:
+            self.register_disposable(self.connection.lidar_stream().subscribe(self.lidar.publish))
         self.register_disposable(self.connection.odom_stream().subscribe(self._publish_tf))
-        self.register_disposable(self.connection.video_stream().subscribe(onimage))
         self.register_disposable(Disposable(self.cmd_vel.subscribe(self.move)))
 
-        self._camera_info_thread = Thread(
-            target=self.publish_camera_info,
-            daemon=True,
-        )
-        self._camera_info_thread.start()
+        if self.config.camera:
+            self.register_disposable(self.connection.video_stream().subscribe(onimage))
+            self._camera_info_thread = Thread(
+                target=self.publish_camera_info,
+                daemon=True,
+            )
+            self._camera_info_thread.start()
+
+        # Select the terrain-capable controller (mcf) before standing, so the
+        # robot can walk up and down stairs under our velocity commands.
+        if self.config.motion_mode:
+            self.connection.set_motion_mode(self.config.motion_mode)
 
         self.standup()
         time.sleep(3)
@@ -382,9 +399,9 @@ def deploy(dimos: ModuleCoordinator, ip: str, prefix: str = "") -> "ModuleProxy"
         f"{prefix}/image", default_capacity=DEFAULT_CAPACITY_COLOR_IMAGE
     )
 
-    connection.cmd_vel.transport = LCMTransport(f"{prefix}/cmd_vel", Twist)
+    connection.cmd_vel.transport = make_transport(f"{prefix}/cmd_vel", Twist)
 
-    connection.camera_info.transport = LCMTransport(f"{prefix}/camera_info", CameraInfo)
+    connection.camera_info.transport = make_transport(f"{prefix}/camera_info", CameraInfo)
     connection.start()
 
     return connection

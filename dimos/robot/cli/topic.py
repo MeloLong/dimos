@@ -20,7 +20,8 @@ import time
 
 import typer
 
-from dimos.core.transport import LCMTransport, pLCMTransport
+from dimos.core.transport import PubSubTransport
+from dimos.core.transport_factory import make_transport
 from dimos.protocol.pubsub.impl.lcmpubsub import LCMPubSubBase
 
 _modules_to_try = [
@@ -59,10 +60,7 @@ def topic_echo(topic: str, type_name: str | None) -> None:
     # Explicit mode (legacy): unchanged.
     if type_name is not None:
         msg_type = _resolve_type(type_name)
-        use_pickled = getattr(msg_type, "lcm_encode", None) is None
-        transport: pLCMTransport[object] | LCMTransport[object] = (
-            pLCMTransport(topic) if use_pickled else LCMTransport(topic, msg_type)
-        )
+        transport: PubSubTransport[object] = make_transport(topic, msg_type)
 
         def _on_message(msg: object) -> None:
             print(msg)
@@ -135,10 +133,7 @@ def topic_send(topic: str, message_expr: str) -> None:
         raise typer.Exit(1)
 
     msg_type = type(message)
-    use_pickled = getattr(msg_type, "lcm_encode", None) is None
-    transport: pLCMTransport[object] | LCMTransport[object] = (
-        pLCMTransport(topic) if use_pickled else LCMTransport(topic, msg_type)
-    )
+    transport: PubSubTransport[object] = make_transport(topic, msg_type)
 
     transport.broadcast(None, message)
     typer.echo(f"Sent to {topic}: {message}")
