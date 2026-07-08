@@ -114,7 +114,7 @@ _m20_simple_nav_base = autoconnect(
 )
 
 
-m20_simple_nav = autoconnect(
+m20_dan_nav = autoconnect(
     _m20_simple_nav_base,
     _m20_slam_ray_tracer,
     # CostMapper.blueprint(
@@ -158,7 +158,9 @@ m20_simple_nav = autoconnect(
         ]
     ),
     # Setting resample_spacing_m to > 0.0 smooths jagged paths returned by MLSP.
-    DanLocalPlanner.blueprint(resample_spacing_m=0.1),
+    DanLocalPlanner.blueprint(
+        resample_spacing_m=0.1
+    ),  # DanLocalPlanner.blueprint(lock_replan=0.0, resample_spacing_m=0.1)
     DanHolonomicTC.blueprint(run_profile="walk"),
     MovementManager.blueprint(),
 ).global_config(n_workers=10, robot_model="m20")

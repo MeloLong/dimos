@@ -13,12 +13,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Fixed forward path planner for M20 bringup/debugging.
+"""Fixed direction path planner for M20 bringup/debugging.
 
 This module is intentionally much simpler than MLSPlannerNative: when a goal is
-received, it ignores the goal position and tries to publish a straight path 4 m
-along the robot's current +X axis. The path is only published when the latest
-local map has no occupied voxels inside the configured forward corridor.
+received, it ignores the goal position and cycles through straight 4 m paths in
+the robot frame: forward, backward, left, right. The path is only published when
+the latest local map has no occupied voxels inside the configured corridor for
+that direction.
 """
 
 from __future__ import annotations
@@ -55,26 +56,41 @@ class FixedForwardPathPlannerConfig(ModuleConfig):
 
 @dataclass(frozen=True)
 class BlockedReason:
+    direction: str
     count: int
-    nearest_forward_m: float
+    nearest_along_m: float
     nearest_lateral_m: float
     nearest_relative_z_m: float
 
     def format(self) -> str:
         return (
-            f"{self.count} occupied point(s) in forward corridor; "
-            f"nearest at x={self.nearest_forward_m:.2f}m, "
+            f"{self.count} occupied point(s) in {self.direction} corridor; "
+            f"nearest at along={self.nearest_along_m:.2f}m, "
             f"lateral={self.nearest_lateral_m:.2f}m, "
             f"relative_z={self.nearest_relative_z_m:.2f}m"
         )
 
 
+@dataclass(frozen=True)
+class PathDirection:
+    name: str
+    x: float
+    y: float
+
+
 class FixedForwardPathPlanner(Module):
-    """Publish a straight 4 m path along the robot's current +X axis on goal.
+    """Publish a straight 4 m path in a cycling robot-frame direction on goal.
 
     The ports mirror MLSPlannerNative's public contract so this module can be
     swapped into M20 navigation blueprints with minimal remapping changes.
     """
+
+    _directions = (
+        PathDirection("forward", 1.0, 0.0),
+        PathDirection("backward", -1.0, 0.0),
+        PathDirection("left", 0.0, 1.0),
+        PathDirection("right", 0.0, -1.0),
+    )
 
     config: FixedForwardPathPlannerConfig
 
@@ -94,6 +110,7 @@ class FixedForwardPathPlanner(Module):
         self._latest_local_map: PointCloud2 | None = None
         self._latest_start_pose: PoseStamped | None = None
         self._latest_region_bounds: PoseStamped | None = None
+        self._goal_count = 0
 
     @rpc
     def start(self) -> None:
@@ -130,27 +147,45 @@ class FixedForwardPathPlanner(Module):
             self._fail("missing local_map")
             return
 
-        blocked = self._blocked_reason(start, local_map)
+        direction = self._next_direction()
+        blocked = self._blocked_reason(start, local_map, direction)
         if blocked is not None:
             self._fail(f"blocked: {blocked.format()}")
             return
 
-        path = self._make_path(start)
+        path = self._make_path(start, direction)
         self.path.publish(path)
+        end = path.poses[-1]
         logger.info(
-            "FixedForwardPathPlanner published path",
-            frame_id=path.frame_id,
-            poses=len(path.poses),
-            length_m=self.config.path_length_m,
+            "FixedForwardPathPlanner published %s path #%d: %.2fm, %d poses, "
+            "start=(%.2f, %.2f, %.2f), end=(%.2f, %.2f, %.2f), frame=%s",
+            direction.name,
+            self._goal_count,
+            self.config.path_length_m,
+            len(path.poses),
+            start.x,
+            start.y,
+            start.z,
+            end.x,
+            end.y,
+            end.z,
+            path.frame_id,
         )
 
-    def _make_path(self, start: PoseStamped) -> Path:
+    def _next_direction(self) -> PathDirection:
+        direction = self._directions[self._goal_count % len(self._directions)]
+        self._goal_count += 1
+        return direction
+
+    def _make_path(self, start: PoseStamped, direction: PathDirection) -> Path:
         spacing = max(self.config.sample_spacing_m, 1e-3)
         steps = max(1, math.ceil(self.config.path_length_m / spacing))
         poses: list[PoseStamped] = []
         for i in range(steps + 1):
             distance = min(i * spacing, self.config.path_length_m)
-            offset = start.orientation.rotate_vector(Vector3(distance, 0.0, 0.0))
+            offset = start.orientation.rotate_vector(
+                Vector3(direction.x * distance, direction.y * distance, 0.0)
+            )
             poses.append(
                 PoseStamped(
                     ts=start.ts,
@@ -165,7 +200,9 @@ class FixedForwardPathPlanner(Module):
             )
         return Path(frame_id=start.frame_id, poses=poses)
 
-    def _blocked_reason(self, start: PoseStamped, local_map: PointCloud2) -> BlockedReason | None:
+    def _blocked_reason(
+        self, start: PoseStamped, local_map: PointCloud2, direction: PathDirection
+    ) -> BlockedReason | None:
         points = local_map.points_f32()
         if points.size == 0:
             return None
@@ -175,13 +212,13 @@ class FixedForwardPathPlanner(Module):
         rotation_inv = start.orientation.inverse().to_rotation_matrix().astype(np.float32)
         relative_robot = relative_world @ rotation_inv.T
 
-        forward = relative_robot[:, 0]
-        lateral = np.abs(relative_robot[:, 1])
+        along = relative_robot[:, 0] * direction.x + relative_robot[:, 1] * direction.y
+        lateral = np.abs(-relative_robot[:, 0] * direction.y + relative_robot[:, 1] * direction.x)
         relative_z = relative_robot[:, 2]
 
         mask = (
-            (forward >= 0.0)
-            & (forward <= self.config.path_length_m + self.config.safety_extension_m)
+            (along >= 0.0)
+            & (along <= self.config.path_length_m + self.config.safety_extension_m)
             & (lateral <= self.config.corridor_radius_m)
             & (relative_z >= self.config.min_relative_z_m)
             & (relative_z <= self.config.max_relative_z_m)
@@ -190,10 +227,11 @@ class FixedForwardPathPlanner(Module):
         if len(blocking_indices) < self.config.min_blocking_points:
             return None
 
-        nearest_idx = blocking_indices[np.argmin(forward[blocking_indices])]
+        nearest_idx = blocking_indices[np.argmin(along[blocking_indices])]
         return BlockedReason(
+            direction=direction.name,
             count=len(blocking_indices),
-            nearest_forward_m=float(forward[nearest_idx]),
+            nearest_along_m=float(along[nearest_idx]),
             nearest_lateral_m=float(lateral[nearest_idx]),
             nearest_relative_z_m=float(relative_z[nearest_idx]),
         )

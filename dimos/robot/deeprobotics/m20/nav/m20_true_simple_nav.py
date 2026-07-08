@@ -73,7 +73,7 @@ _m20_slam_ray_tracer = RayTracingVoxelMap.blueprint(
 #     ]
 # )
 
-m20_simple_nav = autoconnect(
+m20_true_simple_nav = autoconnect(
     m20,
     _m20_slam_ray_tracer,
     CostMapper.blueprint(
