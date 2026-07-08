@@ -91,6 +91,7 @@ all_blueprints = {
     "ray-tracer": "dimos.robot.deeprobotics.m20.blueprints.basic:ray_tracer",
     "rerun": "dimos.robot.deeprobotics.m20.blueprints.basic:rerun",
     "teleop-hosted-go2": "dimos.teleop.quest_hosted.blueprints:teleop_hosted_go2",
+    "teleop-hosted-go2-transport": "dimos.teleop.quest_hosted.blueprints:teleop_hosted_go2_transport",
     "teleop-hosted-xarm7": "dimos.teleop.quest_hosted.blueprints:teleop_hosted_xarm7",
     "teleop-phone": "dimos.teleop.phone.blueprints:teleop_phone",
     "teleop-phone-go2": "dimos.teleop.phone.blueprints:teleop_phone_go2",
