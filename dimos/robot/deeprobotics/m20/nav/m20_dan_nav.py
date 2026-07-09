@@ -24,12 +24,14 @@ from pathlib import Path
 from typing import Any
 
 from dimos.core.coordination.blueprints import autoconnect
-from dimos.core.global_config import global_config
 from dimos.mapping.ray_tracing.module import RayTracingVoxelMap
 from dimos.navigation.dannav.holonomic_tc.module import DanHolonomicTC
 from dimos.navigation.dannav.local_planner.module import DanLocalPlanner
 from dimos.navigation.movement_manager.movement_manager import MovementManager
 from dimos.navigation.nav_3d.mls_planner.goal_relay import GoalRelay
+
+# from dimos.navigation.nav_3d.mls_planner.mls_planner_native import MLSPlannerNative
+from dimos.protocol.pubsub.patterns import Glob
 from dimos.robot.deeprobotics.m20.blueprints.basic import (
     _node_edges_on_surface,
     m20_rerun_blueprint,
@@ -38,7 +40,9 @@ from dimos.robot.deeprobotics.m20.connection import M20Connection
 from dimos.robot.deeprobotics.m20.nav.fixed_forward_path_planner import FixedForwardPathPlanner
 from dimos.robot.deeprobotics.m20.nav.odom2posestamped import OdomToPoseStamped
 from dimos.robot.deeprobotics.m20.tf import M20TF
-from dimos.visualization.vis_module import vis_module
+from dimos.visualization.rerun.bridge import RerunBridgeModule
+from dimos.visualization.rerun.websocket_server import RerunWebSocketServer
+from dimos.web.websocket_vis.websocket_vis_module import WebsocketVisModule
 
 voxel_size = 0.05
 m20_width_clearance = 0.45
@@ -91,24 +95,55 @@ def _render_path(msg: Any) -> Any:
     return msg
 
 
-_m20_nav_rerun_config = {
-    "blueprint": m20_rerun_blueprint,
-    "memory_limit": "10GB",
-    "max_hz": {
-        "world/color_image": 0,
-        "world/color_image_rear": 0,
-        "world/global_map": 1.0,
-        "world/local_map": 2.0,
-    },
-    "visual_override": {
-        "world/node_edges": _node_edges_on_surface,
-        "world/planner_path": None,
-        "world/path": _render_path,
-    },
-}
+_m20_dan_rerun = autoconnect(
+    RerunBridgeModule.blueprint(
+        blueprint=m20_rerun_blueprint,
+        memory_limit="1GB",
+        max_hz={
+            "world/color_image": 20,
+            "world/color_image_rear": 20,
+            "world/global_map": 1.0,
+            "world/local_map": 2.0,
+        },
+        latest_only_entities=[
+            "world/slam_aligned_points",
+            "world/local_map",
+            "world/global_map",
+            "world/global_costmap",
+        ],
+        use_message_timestamps=False,
+        debug_stats=True,
+        debug_stats_interval=5.0,
+        debug_stats_entities=[
+            "world/color_image",
+            "world/color_image_rear",
+            "world/slam_aligned_points",
+            "world/global_map",
+            "world/local_map",
+            Glob("world/**image**"),
+            Glob("world/**map**"),
+            Glob("world/**point**"),
+            Glob("world/**costmap**"),
+        ],
+        debug_low_fps_warn={
+            "world/color_image": 20.0,
+            "world/color_image_rear": 20.0,
+            "world/slam_aligned_points": 9.8,
+            "world/local_map": 4.5,
+            "world/global_map": 0.8,
+        },
+        visual_override={
+            "world/node_edges": _node_edges_on_surface,
+            "world/planner_path": None,
+            "world/path": _render_path,
+        },
+    ),
+    RerunWebSocketServer.blueprint(),
+    WebsocketVisModule.blueprint(),
+)
 
 _m20_simple_nav_base = autoconnect(
-    vis_module(viewer_backend=global_config.viewer, rerun_config=_m20_nav_rerun_config),
+    _m20_dan_rerun,
     M20Connection.blueprint(),
     M20TF.blueprint().remappings([(M20TF, "odometry", "dimos/slam_odom")]),
 )
@@ -138,11 +173,26 @@ m20_dan_nav = autoconnect(
     ).remappings(
         [
             (FixedForwardPathPlanner, "path", "planner_path"),
-            # Keep the planner contract MLS-compatible while driving only from
-            # local_map + start/goal. The accumulated global map is not used.
             (FixedForwardPathPlanner, "global_map", "global_map_unused"),
         ]
     ),
+    # MLSPlannerNative.blueprint(
+    #     world_frame="map",
+    #     voxel_size=voxel_size,
+    #     robot_height=1.2,
+    #     wall_clearance_m=0.2,
+    #     wall_buffer_m=0.75,
+    #     wall_buffer_weight=100.0,
+    #     step_threshold_m=0.16,
+    #     step_penalty_weight=1.0,
+    #     viz_publish_hz=0.0,
+    # ).remappings(
+    #     [
+    #         (MLSPlannerNative, "path", "planner_path"),
+    #         # Use the incremental local_map + region_bounds pair from ray tracing.
+    #         (MLSPlannerNative, "global_map", "global_map_unused"),
+    #     ]
+    # ),
     OdomToPoseStamped.blueprint().remappings(
         [
             (OdomToPoseStamped, "odometry", "dimos/slam_odom"),
@@ -154,8 +204,7 @@ m20_dan_nav = autoconnect(
             (GoalRelay, "odometry", "dimos/slam_odom"),
         ]
     ),
-    # Keep this as pass-through for the fixed test paths; resampling only densifies
-    # the straight segment before DanHolonomicTC consumes it.
+    # Setting resample_spacing_m to > 0.0 smooths jagged paths returned by MLSP.
     DanLocalPlanner.blueprint(
         lock_replan=0.0,
         resample_spacing_m=0.1,

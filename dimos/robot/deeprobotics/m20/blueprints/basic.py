@@ -27,9 +27,11 @@ from dimos.mapping.ray_tracing.module import RayTracingVoxelMap
 from dimos.navigation.basic_path_follower.module import BasicPathFollower
 from dimos.navigation.movement_manager.movement_manager import MovementManager
 from dimos.navigation.nav_3d.mls_planner.goal_relay import GoalRelay
-from dimos.navigation.nav_3d.mls_planner.mls_planner_native import MLSPlannerNative
+
+# from dimos.navigation.nav_3d.mls_planner.mls_planner_native import MLSPlannerNative
 from dimos.protocol.pubsub.patterns import Glob
 from dimos.robot.deeprobotics.m20.connection import M20Connection
+from dimos.robot.deeprobotics.m20.nav.fixed_forward_path_planner import FixedForwardPathPlanner
 from dimos.robot.deeprobotics.m20.tf import M20TF
 from dimos.visualization.rerun.bridge import RerunBridgeModule
 from dimos.visualization.rerun.websocket_server import RerunWebSocketServer
@@ -70,10 +72,10 @@ def m20_rerun_blueprint() -> Any:
 rerun = autoconnect(
     RerunBridgeModule.blueprint(
         blueprint=m20_rerun_blueprint,
-        memory_limit="15GB",
+        memory_limit="2GB",
         max_hz={
-            "world/color_image": 0,
-            "world/color_image_rear": 0,
+            "world/color_image": 20,
+            "world/color_image_rear": 20,
             "world/global_map": 1.0,
             "world/local_map": 2.0,
         },
@@ -147,27 +149,29 @@ m20_nav = autoconnect(
     ray_tracer,
 ).global_config(n_workers=4)
 
-# m20_nav + the 3D MLS planner stack, mirroring unitree_go2_nav_3d:
+# m20_nav + the fixed-path planner stack, adapted from the 3D MLS planner stack:
 #   GoalRelay        slam_odom -> start_pose, clicked goal -> goal_pose
-#   MLSPlannerNative local_map + region_bounds + start/goal -> path
+#   FixedForwardPathPlanner local_map + start/goal -> path
 #   BasicPathFollower path + slam_odom -> nav_cmd_vel
 #   MovementManager  clicked_point -> goal, muxes nav_cmd_vel -> cmd_vel
-# The planner runs on the incremental local_map + region_bounds pair, so
-# global_map is remapped off. world_frame="map" matches the M20 SLAM frame.
+# The fixed planner keeps the MLS-compatible ports, so global_map is remapped off.
 m20_nav_3d = autoconnect(
     m20_nav,
     GoalRelay.blueprint().remappings([(GoalRelay, "odometry", "dimos/slam_odom")]),
-    MLSPlannerNative.blueprint(
-        world_frame="map",
-        voxel_size=voxel_size,
-        robot_height=0.6,
-        wall_clearance_m=0.375,
-        wall_buffer_m=0.75,
-        wall_buffer_weight=100.0,
-        step_threshold_m=0.25,
-        step_penalty_weight=1.0,
-        viz_publish_hz=1.0,
-    ).remappings([(MLSPlannerNative, "global_map", "global_map_unused")]),
+    # MLSPlannerNative.blueprint(
+    #     world_frame="map",
+    #     voxel_size=voxel_size,
+    #     robot_height=0.6,
+    #     wall_clearance_m=0.375,
+    #     wall_buffer_m=0.75,
+    #     wall_buffer_weight=100.0,
+    #     step_threshold_m=0.25,
+    #     step_penalty_weight=1.0,
+    #     viz_publish_hz=1.0,
+    # ).remappings([(MLSPlannerNative, "global_map", "global_map_unused")]),
+    FixedForwardPathPlanner.blueprint().remappings(
+        [(FixedForwardPathPlanner, "global_map", "global_map_unused")]
+    ),
     BasicPathFollower.blueprint(speed=0.5, heading_gain=0.4, max_angular=0.6).remappings(
         [(BasicPathFollower, "odometry", "dimos/slam_odom")]
     ),
