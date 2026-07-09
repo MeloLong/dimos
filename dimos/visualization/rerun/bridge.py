@@ -516,14 +516,6 @@ class RerunBridgeModule(Module):
             self._debug_maybe_log(entity_path, time.monotonic())
             return
 
-        if self.config.use_message_timestamps:
-            # Place data on the timeline by capture time, not by when the bridge got
-            # to it. This assumes the message timestamp uses a viewer-compatible clock.
-            ts = getattr(msg, "ts", None)
-            if ts is not None:
-                rr.set_time("capture", timestamp=ts)
-
-        log_start = time.monotonic()
         # TFMessage for example returns list of (entity_path, archetype) tuples
         if is_rerun_multi(rerun_data):
             for path, archetype in rerun_data:
