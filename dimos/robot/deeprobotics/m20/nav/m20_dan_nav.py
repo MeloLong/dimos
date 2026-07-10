@@ -30,12 +30,12 @@ from dimos.navigation.dannav.holonomic_tc.module import DanHolonomicTC
 from dimos.navigation.dannav.local_planner.module import DanLocalPlanner
 from dimos.navigation.movement_manager.movement_manager import MovementManager
 from dimos.navigation.nav_3d.mls_planner.goal_relay import GoalRelay
+from dimos.navigation.nav_3d.mls_planner.mls_planner_native import MLSPlannerNative
 from dimos.robot.deeprobotics.m20.blueprints.basic import (
     _node_edges_on_surface,
     m20_rerun_blueprint,
 )
 from dimos.robot.deeprobotics.m20.connection import M20Connection
-from dimos.robot.deeprobotics.m20.nav.fixed_forward_path_planner import FixedForwardPathPlanner
 from dimos.robot.deeprobotics.m20.nav.odom2posestamped import OdomToPoseStamped
 from dimos.robot.deeprobotics.m20.tf import M20TF
 from dimos.visualization.vis_module import vis_module
@@ -129,18 +129,40 @@ m20_dan_nav = autoconnect(
     #     ),
     #     initial_safe_radius_meters=m20_width_clearance + m20_safe_radius_margin,
     # ),
-    FixedForwardPathPlanner.blueprint(
-        path_length_m=4.0,
-        sample_spacing_m=0.2,
-        corridor_radius_m=m20_width_clearance + m20_safe_radius_margin,
-        min_relative_z_m=-0.2,
-        max_relative_z_m=m20_overhead_clearance,
+    # Bringup/debug fallback. FixedForwardPathPlanner mirrors the MLS planner's
+    # ports but ignores clicked goal positions and cycles through fixed local
+    # paths instead.
+    # FixedForwardPathPlanner.blueprint(
+    #     path_length_m=4.0,
+    #     sample_spacing_m=0.2,
+    #     corridor_radius_m=m20_width_clearance + m20_safe_radius_margin,
+    #     min_relative_z_m=-0.2,
+    #     max_relative_z_m=m20_overhead_clearance,
+    # ).remappings(
+    #     [
+    #         (FixedForwardPathPlanner, "path", "planner_path"),
+    #         # Keep the planner contract MLS-compatible while driving only from
+    #         # local_map + start/goal. The accumulated global map is not used.
+    #         (FixedForwardPathPlanner, "global_map", "global_map_unused"),
+    #     ]
+    # ),
+    MLSPlannerNative.blueprint(
+        world_frame="map",
+        voxel_size=voxel_size,
+        robot_height=m20_overhead_clearance,
+        wall_clearance_m=m20_width_clearance + m20_safe_radius_margin,
+        wall_buffer_m=0.75,
+        wall_buffer_weight=100.0,
+        step_threshold_m=m20_max_step_height,
+        step_penalty_weight=1.0,
+        goal_tolerance=0.3,
+        viz_publish_hz=1.0,
     ).remappings(
         [
-            (FixedForwardPathPlanner, "path", "planner_path"),
-            # Keep the planner contract MLS-compatible while driving only from
-            # local_map + start/goal. The accumulated global map is not used.
-            (FixedForwardPathPlanner, "global_map", "global_map_unused"),
+            (MLSPlannerNative, "path", "planner_path"),
+            # Use the incremental local_map + region_bounds pair from ray tracing.
+            # The accumulated global map is not used by this navigation stack.
+            (MLSPlannerNative, "global_map", "global_map_unused"),
         ]
     ),
     OdomToPoseStamped.blueprint().remappings(
@@ -154,10 +176,8 @@ m20_dan_nav = autoconnect(
             (GoalRelay, "odometry", "dimos/slam_odom"),
         ]
     ),
-    # Keep this as pass-through for the fixed test paths; resampling only densifies
-    # the straight segment before DanHolonomicTC consumes it.
     DanLocalPlanner.blueprint(
-        lock_replan=0.0,
+        lock_replan=1.0,
         resample_spacing_m=0.1,
     ),
     DanHolonomicTC.blueprint(run_profile="walk"),
