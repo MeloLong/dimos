@@ -71,6 +71,7 @@ all_blueprints = {
     "m20-api": "dimos.robot.deeprobotics.m20.blueprints.basic:m20_api",
     "m20-dan-nav": "dimos.robot.deeprobotics.m20.nav.m20_dan_nav:m20_dan_nav",
     "m20-dds-rerun": "dimos.robot.deeprobotics.m20.dds.blueprints:m20_dds_rerun",
+    "m20-map-save": "dimos.robot.deeprobotics.m20.nav.m20_map_save:m20_map_save",
     "m20-native-sensors": "dimos.robot.m20_native.blueprints.basic.m20_native_sensors:m20_native_sensors",
     "m20-nav": "dimos.robot.deeprobotics.m20.blueprints.basic:m20_nav",
     "m20-nav-3d": "dimos.robot.deeprobotics.m20.blueprints.basic:m20_nav_3d",

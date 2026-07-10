@@ -329,9 +329,13 @@ public:
             if (!passes_threshold(pose)) {
                 return;
             }
-            CloudT transformed;
-            pcl::transformPointCloud(*points, transformed, pose_to_affine(pose));
-            *g_accumulated += transformed;
+            // M20 SLAM already publishes slam_aligned_points in the map frame.
+            // Temporarily bypass the odom transform to avoid double-transforming
+            // registered clouds.
+            // CloudT transformed;
+            // pcl::transformPointCloud(*points, transformed, pose_to_affine(pose));
+            // *g_accumulated += transformed;
+            *g_accumulated += *points;
             voxel_filter_in_place(g_accumulated);
             g_last_keyframe = pose;
         }

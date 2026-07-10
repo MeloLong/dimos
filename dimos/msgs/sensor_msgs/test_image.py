@@ -12,7 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import importlib
 import sys
+from typing import Any
 
 import numpy as np
 import pytest
@@ -66,6 +68,33 @@ def test_opencv_conversion(img: Image) -> None:
     # artificially patch timestamp
     decoded_img.ts = img.ts
     assert decoded_img == img
+
+
+def test_resize_default_does_not_require_cv2_constant(monkeypatch: pytest.MonkeyPatch) -> None:
+    image_module = importlib.import_module("dimos.msgs.sensor_msgs.Image")
+
+    class FakeCV2:
+        def __init__(self) -> None:
+            self.interpolation: int | None = None
+
+        def resize(
+            self,
+            data: np.ndarray[Any, np.dtype[Any]],
+            size: tuple[int, int],
+            interpolation: int,
+        ) -> np.ndarray[Any, np.dtype[Any]]:
+            self.interpolation = interpolation
+            width, height = size
+            return np.zeros((height, width, data.shape[2]), dtype=data.dtype)
+
+    fake_cv2 = FakeCV2()
+    monkeypatch.setattr(image_module, "cv2", fake_cv2)
+
+    image = Image(data=np.zeros((4, 6, 3), dtype=np.uint8))
+    resized = image.resize(3, 2)
+
+    assert resized.shape == (2, 3, 3)
+    assert fake_cv2.interpolation == 1
 
 
 def test_sharpness_barrier() -> None:

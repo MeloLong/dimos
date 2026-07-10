@@ -16,16 +16,15 @@
 """Fixed pattern path planner for M20 bringup/debugging.
 
 This module is intentionally much simpler than MLSPlannerNative: when a goal is
-received, it ignores the goal position and cycles through test paths in the
-robot frame: forward, backward, left, right, and a circle. The path is only
-published when the latest local map has no occupied voxels inside the configured
-corridor swept by that path.
+received, it ignores the goal position and cycles through fixed paths in the
+robot frame: forward, backward, left, right, then a major left arc. The path is
+only published when the latest local map has no occupied voxels inside the
+configured corridor for that path.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from itertools import pairwise
 import math
 from typing import Any
 
@@ -47,8 +46,9 @@ logger = setup_logger()
 
 class FixedForwardPathPlannerConfig(ModuleConfig):
     path_length_m: float = 4.0
-    circle_radius_m: float = 1
-    circle_end_gap_m: float = 0.3
+    arc_chord_m: float = 0.25
+    arc_radius_m: float = 1.5
+    arc_path_width_m: float = 0.6
     safety_extension_m: float = 0.3
     sample_spacing_m: float = 0.2
     corridor_radius_m: float = 0.6
@@ -84,11 +84,11 @@ class PathDirection:
     name: str
     x: float
     y: float
-    circle: bool = False
+    is_arc: bool = False
 
 
 class FixedForwardPathPlanner(Module):
-    """Publish a fixed test path in a cycling robot-frame pattern on goal.
+    """Publish a fixed path in a cycling robot-frame direction on goal.
 
     The ports mirror MLSPlannerNative's public contract so this module can be
     swapped into M20 navigation blueprints with minimal remapping changes.
@@ -99,7 +99,7 @@ class FixedForwardPathPlanner(Module):
         PathDirection("backward", -1.0, 0.0),
         PathDirection("left", 0.0, 1.0),
         PathDirection("right", 0.0, -1.0),
-        PathDirection("circle", 0.0, 0.0, circle=True),
+        PathDirection("arc_left", 0.0, 0.0, is_arc=True),
     )
 
     config: FixedForwardPathPlannerConfig
@@ -166,13 +166,13 @@ class FixedForwardPathPlanner(Module):
 
         self.path.publish(path)
         end = path.poses[-1]
-        path_length = self._path_length(path)
+        self._path_length(path)
         logger.info(
             "FixedForwardPathPlanner published %s path #%d: %.2fm, %d poses, "
             "start=(%.2f, %.2f, %.2f), end=(%.2f, %.2f, %.2f), frame=%s",
             direction.name,
             self._goal_count,
-            path_length,
+            self._path_length_m(direction),
             len(path.poses),
             start.x,
             start.y,
@@ -189,11 +189,9 @@ class FixedForwardPathPlanner(Module):
         return direction
 
     def _make_path(self, start: PoseStamped, direction: PathDirection) -> Path:
-        if direction.circle:
-            return self._make_circle_path(start)
-        return self._make_straight_path(start, direction)
+        if direction.is_arc:
+            return self._make_arc_path(start)
 
-    def _make_straight_path(self, start: PoseStamped, direction: PathDirection) -> Path:
         spacing = max(self.config.sample_spacing_m, 1e-3)
         steps = max(1, math.ceil(self.config.path_length_m / spacing))
         poses: list[PoseStamped] = []
@@ -216,21 +214,11 @@ class FixedForwardPathPlanner(Module):
             )
         return Path(frame_id=start.frame_id, poses=poses)
 
-    def _make_circle_path(self, start: PoseStamped) -> Path:
-        radius = max(self.config.circle_radius_m, 1e-3)
-        spacing = max(self.config.sample_spacing_m, 1e-3)
-        gap = min(max(self.config.circle_end_gap_m, 0.0), 2.0 * radius)
-        angle_gap = 2.0 * math.asin(gap / (2.0 * radius)) if gap > 0.0 else 0.0
-        sweep_angle = max(0.0, 2.0 * math.pi - angle_gap)
-        steps = max(8, math.ceil((sweep_angle * radius) / spacing))
+    def _make_arc_path(self, start: PoseStamped) -> Path:
+        arc_points = self._arc_points_robot_frame(include_safety_extension=False)
         poses: list[PoseStamped] = []
-        for i in range(steps + 1):
-            theta = -math.pi / 2.0 + (sweep_angle * i / steps)
-            # Center is robot-left of the start, so the robot starts on the
-            # circle and the initial tangent points along robot +X.
-            robot_x = radius * math.cos(theta)
-            robot_y = radius + radius * math.sin(theta)
-            offset = start.orientation.rotate_vector(Vector3(robot_x, robot_y, 0.0))
+        for x, y in arc_points:
+            offset = start.orientation.rotate_vector(Vector3(float(x), float(y), 0.0))
             poses.append(
                 PoseStamped(
                     ts=start.ts,
@@ -257,20 +245,11 @@ class FixedForwardPathPlanner(Module):
         rotation_inv = start.orientation.inverse().to_rotation_matrix().astype(np.float32)
         relative_robot = relative_world @ rotation_inv.T
 
-        path_xy = self._path_xy_in_robot_frame(start, path)
-        if not direction.circle:
-            extension = np.array(
-                [
-                    [
-                        direction.x * self.config.safety_extension_m,
-                        direction.y * self.config.safety_extension_m,
-                    ]
-                ],
-                dtype=np.float32,
-            )
-            path_xy = np.vstack([path_xy, path_xy[-1:] + extension])
+        if direction.is_arc:
+            return self._arc_blocked_reason(relative_robot, direction)
 
-        along, lateral = self._nearest_path_progress_and_distance(relative_robot[:, :2], path_xy)
+        along = relative_robot[:, 0] * direction.x + relative_robot[:, 1] * direction.y
+        lateral = np.abs(-relative_robot[:, 0] * direction.y + relative_robot[:, 1] * direction.x)
         relative_z = relative_robot[:, 2]
 
         corridor_radius = (
@@ -295,54 +274,75 @@ class FixedForwardPathPlanner(Module):
             nearest_along_m=float(along[nearest_idx]),
             nearest_lateral_m=float(lateral[nearest_idx]),
             nearest_relative_z_m=float(relative_z[nearest_idx]),
-            nearest_angle_deg=self._circle_angle_deg(float(along[nearest_idx]))
-            if direction.circle
-            else None,
         )
 
-    def _path_xy_in_robot_frame(self, start: PoseStamped, path: Path) -> np.ndarray:
-        origin = np.array([start.x, start.y, start.z], dtype=np.float32)
-        path_world = np.array([[pose.x, pose.y, pose.z] for pose in path.poses], dtype=np.float32)
-        rotation_inv = start.orientation.inverse().to_rotation_matrix().astype(np.float32)
-        path_robot = (path_world - origin) @ rotation_inv.T
-        return path_robot[:, :2]
+    def _arc_blocked_reason(
+        self, relative_robot: np.ndarray, direction: PathDirection
+    ) -> BlockedReason | None:
+        arc_points = self._arc_points_robot_frame(include_safety_extension=True)
+        point_xy = relative_robot[:, :2].astype(np.float32)
+        arc_xy = arc_points.astype(np.float32)
+        deltas = point_xy[:, np.newaxis, :] - arc_xy[np.newaxis, :, :]
+        distance_to_arc = np.sqrt(np.min(np.sum(deltas * deltas, axis=2), axis=1))
+        nearest_sample = np.argmin(np.sum(deltas * deltas, axis=2), axis=1)
+        relative_z = relative_robot[:, 2]
 
-    @staticmethod
-    def _nearest_path_progress_and_distance(
-        points_xy: np.ndarray, path_xy: np.ndarray
-    ) -> tuple[np.ndarray, np.ndarray]:
-        best_dist2 = np.full(points_xy.shape[0], np.inf, dtype=np.float32)
-        best_progress = np.zeros(points_xy.shape[0], dtype=np.float32)
-        progress_at_segment = 0.0
+        arc_half_width_m = max(self.config.arc_path_width_m / 2.0, 0.0)
+        mask = (
+            (distance_to_arc <= arc_half_width_m)
+            & (relative_z >= self.config.min_relative_z_m)
+            & (relative_z <= self.config.max_relative_z_m)
+        )
+        blocking_indices = np.flatnonzero(mask)
+        if len(blocking_indices) < self.config.min_blocking_points:
+            return None
 
-        for start, end in pairwise(path_xy):
-            segment = end - start
-            segment_len = float(np.linalg.norm(segment))
-            if segment_len <= 1e-6:
-                continue
+        sample_spacing = self._arc_length_m(include_safety_extension=True) / max(
+            1, len(arc_points) - 1
+        )
+        along = nearest_sample.astype(np.float32) * sample_spacing
+        nearest_idx = blocking_indices[np.argmin(along[blocking_indices])]
+        return BlockedReason(
+            direction=direction.name,
+            count=len(blocking_indices),
+            nearest_along_m=float(along[nearest_idx]),
+            nearest_lateral_m=float(distance_to_arc[nearest_idx]),
+            nearest_relative_z_m=float(relative_z[nearest_idx]),
+        )
 
-            relative = points_xy - start
-            t = np.clip((relative @ segment) / (segment_len * segment_len), 0.0, 1.0)
-            closest = start + t[:, None] * segment
-            dist2 = np.sum((points_xy - closest) ** 2, axis=1)
-            update = dist2 < best_dist2
-            best_dist2[update] = dist2[update]
-            best_progress[update] = progress_at_segment + t[update] * segment_len
-            progress_at_segment += segment_len
+    def _arc_points_robot_frame(self, *, include_safety_extension: bool) -> np.ndarray:
+        radius, theta = self._arc_geometry()
+        if include_safety_extension:
+            theta += max(0.0, self.config.safety_extension_m) / radius
 
-        return best_progress, np.sqrt(best_dist2)
+        arc_length = radius * theta
+        spacing = max(self.config.sample_spacing_m, 1e-3)
+        steps = max(1, math.ceil(arc_length / spacing))
+        angles = np.linspace(0.0, theta, steps + 1, dtype=np.float32)
+        return np.column_stack(
+            (
+                radius * np.sin(angles),
+                radius * (1.0 - np.cos(angles)),
+            )
+        )
 
-    @staticmethod
-    def _path_length(path: Path) -> float:
-        if len(path.poses) < 2:
-            return 0.0
-        points = np.array([[pose.x, pose.y] for pose in path.poses], dtype=np.float32)
-        segments = points[1:] - points[:-1]
-        return float(np.linalg.norm(segments, axis=1).sum())
+    def _arc_length_m(self, *, include_safety_extension: bool) -> float:
+        radius, theta = self._arc_geometry()
+        length = radius * theta
+        if include_safety_extension:
+            length += max(0.0, self.config.safety_extension_m)
+        return length
 
-    def _circle_angle_deg(self, along_m: float) -> float:
-        radius = max(self.config.circle_radius_m, 1e-3)
-        return math.degrees(along_m / radius) % 360.0
+    def _arc_geometry(self) -> tuple[float, float]:
+        radius = max(self.config.arc_radius_m, (self.config.arc_chord_m / 2.0) + 1e-3)
+        chord = min(self.config.arc_chord_m, 2.0 * radius)
+        minor_theta = 2.0 * math.asin(chord / (2.0 * radius))
+        return radius, (2.0 * math.pi) - minor_theta
+
+    def _path_length_m(self, direction: PathDirection) -> float:
+        if direction.is_arc:
+            return self._arc_length_m(include_safety_extension=False)
+        return self.config.path_length_m
 
     @staticmethod
     def _finite_pose(pose: PoseStamped) -> bool:
