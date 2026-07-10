@@ -73,6 +73,12 @@ def _format_to_rerun(data: np.ndarray, fmt: ImageFormat) -> Any:
             raise ValueError(f"Unsupported format for Rerun: {fmt}")
 
 
+def _resolve_cv2_interpolation(value: int | None, cv2_name: str, fallback: int) -> int:
+    if value is not None:
+        return value
+    return int(getattr(cv2, cv2_name, fallback))
+
+
 class AgentImageMessage(TypedDict):
     """Type definition for agent-compatible image representation."""
 
@@ -334,7 +340,8 @@ class Image(Timestamped):
         """Convert to rerun Image format."""
         return _format_to_rerun(self.data, self.format)
 
-    def resize(self, width: int, height: int, interpolation: int = cv2.INTER_LINEAR) -> Image:
+    def resize(self, width: int, height: int, interpolation: int | None = None) -> Image:
+        interpolation = _resolve_cv2_interpolation(interpolation, "INTER_LINEAR", 1)
         return Image(
             data=cv2.resize(self.data, (width, height), interpolation=interpolation),
             format=self.format,
@@ -343,7 +350,7 @@ class Image(Timestamped):
         )
 
     def resize_to_fit(
-        self, max_width: int, max_height: int, interpolation: int = cv2.INTER_LINEAR
+        self, max_width: int, max_height: int, interpolation: int | None = None
     ) -> tuple[Image, float]:
         """Resize image to fit within max dimensions while preserving aspect ratio.
 

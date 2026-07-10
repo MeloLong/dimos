@@ -516,6 +516,7 @@ class RerunBridgeModule(Module):
             self._debug_maybe_log(entity_path, time.monotonic())
             return
 
+        log_start = time.monotonic()
         # TFMessage for example returns list of (entity_path, archetype) tuples
         if is_rerun_multi(rerun_data):
             for path, archetype in rerun_data:

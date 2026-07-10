@@ -93,7 +93,7 @@ def _render_path(msg: Any) -> Any:
 
 _m20_nav_rerun_config = {
     "blueprint": m20_rerun_blueprint,
-    "memory_limit": "10GB",
+    "memory_limit": "1GB",
     "max_hz": {
         "world/color_image": 0,
         "world/color_image_rear": 0,
