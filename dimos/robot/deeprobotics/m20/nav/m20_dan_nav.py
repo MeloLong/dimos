@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Any
 
 from dimos.core.coordination.blueprints import autoconnect
+from dimos.core.global_config import global_config
 from dimos.mapping.ray_tracing.module import RayTracingVoxelMap
 from dimos.navigation.dannav.holonomic_tc.module import DanHolonomicTC
 from dimos.navigation.dannav.local_planner.module import DanLocalPlanner
@@ -37,6 +38,7 @@ from dimos.robot.deeprobotics.m20.blueprints.basic import (
 from dimos.robot.deeprobotics.m20.connection import M20Connection
 from dimos.robot.deeprobotics.m20.nav.odom2posestamped import OdomToPoseStamped
 from dimos.robot.deeprobotics.m20.tf import M20TF
+from dimos.visualization.vis_module import vis_module
 
 voxel_size = 0.05
 m20_width_clearance = 0.45
@@ -106,11 +108,10 @@ _m20_nav_rerun_config = {
 }
 
 _m20_simple_nav_base = autoconnect(
-    _m20_dan_rerun,
+    vis_module(viewer_backend=global_config.viewer, rerun_config=_m20_nav_rerun_config),
     M20Connection.blueprint(),
     M20TF.blueprint().remappings([(M20TF, "odometry", "dimos/slam_odom")]),
 )
-
 
 m20_dan_nav = autoconnect(
     _m20_simple_nav_base,
