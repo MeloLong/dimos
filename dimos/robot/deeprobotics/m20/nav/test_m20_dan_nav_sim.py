@@ -1,12 +1,19 @@
+import json
+
 from pydantic import ValidationError
 import pytest
 
+from dimos.robot.cli.dimos import load_config_args
 from dimos.robot.deeprobotics.m20.connection import M20Connection
 from dimos.robot.deeprobotics.m20.mujoco_sim import (
     M20MujocoSimConfig,
     M20MujocoSimConnection,
 )
-from dimos.robot.deeprobotics.m20.nav.m20_dan_nav import m20_dan_nav, m20_dan_nav_sim
+from dimos.robot.deeprobotics.m20.nav.m20_dan_nav import (
+    M20_MUJOCO_SIM_CONFIG_PATH,
+    m20_dan_nav,
+    m20_dan_nav_sim,
+)
 
 
 def _modules(blueprint):
@@ -75,3 +82,32 @@ def test_m20_navigation_sim_uses_lightweight_sensor_profile() -> None:
     assert atom.kwargs["publish_front_image"] is False
     assert atom.kwargs["publish_rear_image"] is False
     assert atom.kwargs["enable_pointcloud"] is True
+
+
+def test_m20_navigation_sim_loads_sensor_profile_from_json() -> None:
+    payload = json.loads(M20_MUJOCO_SIM_CONFIG_PATH.read_text(encoding="utf-8"))
+    values = payload["m20mujocosimconnection"]
+    expected = M20MujocoSimConfig.model_validate(values).model_dump(include=set(values))
+    atom = next(
+        atom for atom in m20_dan_nav_sim.blueprints if atom.module is M20MujocoSimConnection
+    )
+
+    assert atom.kwargs == expected
+
+
+def test_partial_cli_config_keeps_checked_in_sensor_defaults(tmp_path) -> None:
+    override_path = tmp_path / "override.json"
+    override_path.write_text(
+        json.dumps({"m20mujocosimconnection": {"pointcloud_fps": 1.0}}),
+        encoding="utf-8",
+    )
+    overrides = load_config_args(m20_dan_nav_sim.config(), (), override_path)
+    atom = next(
+        atom for atom in m20_dan_nav_sim.blueprints if atom.module is M20MujocoSimConnection
+    )
+    merged = {**atom.kwargs, **overrides["m20mujocosimconnection"]}
+    config = M20MujocoSimConfig.model_validate(merged)
+
+    assert config.pointcloud_fps == 1.0
+    assert not config.enable_color
+    assert not config.publish_front_image

@@ -20,6 +20,7 @@ DimOS as ``slam_aligned_points`` and ``slam_odom``. It does not subscribe to the
 front/rear raw lidar topics directly.
 """
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -35,7 +36,10 @@ from dimos.robot.deeprobotics.m20.blueprints.basic import (
     m20_rerun_blueprint,
 )
 from dimos.robot.deeprobotics.m20.connection import M20Connection
-from dimos.robot.deeprobotics.m20.mujoco_sim import M20MujocoSimConnection
+from dimos.robot.deeprobotics.m20.mujoco_sim import (
+    M20MujocoSimConfig,
+    M20MujocoSimConnection,
+)
 from dimos.robot.deeprobotics.m20.nav.odom2posestamped import OdomToPoseStamped
 from dimos.robot.deeprobotics.m20.tf import M20TF
 from dimos.visualization.rerun.bridge import RerunBridgeModule
@@ -54,6 +58,17 @@ m20_rotation_diameter = 1.2
 m20_safe_radius_margin = 0.1
 map_save_dir = Path(__file__).resolve().parent / "map_save"
 map_save_path = map_save_dir / "m20_accumulated_map.pcd"
+M20_MUJOCO_SIM_CONFIG_PATH = Path(__file__).resolve().parents[1] / "config/mujoco_sim.json"
+
+
+def _load_m20_mujoco_sim_config() -> dict[str, Any]:
+    payload = json.loads(M20_MUJOCO_SIM_CONFIG_PATH.read_text(encoding="utf-8"))
+    values = payload["m20mujocosimconnection"]
+    config = M20MujocoSimConfig.model_validate(values)
+    return config.model_dump(include=set(values))
+
+
+M20_MUJOCO_SIM_CONFIG = _load_m20_mujoco_sim_config()
 
 _m20_slam_ray_tracer = RayTracingVoxelMap.blueprint(
     voxel_size=voxel_size,
@@ -210,15 +225,7 @@ m20_dan_nav = autoconnect(
 
 m20_dan_nav_sim = autoconnect(
     _m20_dan_nav_core,
-    M20MujocoSimConnection.blueprint(
-        # Navigation only needs odometry and point clouds. The legacy RGB
-        # renderer is expensive under software EGL and has no real M20 camera.
-        enable_color=False,
-        publish_front_image=False,
-        publish_rear_image=False,
-        enable_pointcloud=True,
-        pointcloud_fps=2.0,
-    ).remappings(
+    M20MujocoSimConnection.blueprint(**M20_MUJOCO_SIM_CONFIG).remappings(
         [
             (M20MujocoSimConnection, "slam_odom", "dimos/slam_odom"),
             (

@@ -21,7 +21,14 @@ as a navigation data source. It does not validate DeepRobotics M20 dynamics,
 actuators, gait control, or physical limits.
 
 Sensor settings are validated `ModuleConfig` parameters on
-`M20MujocoSimConnection.blueprint(...)`:
+`M20MujocoSimConnection`. The checked-in default profile is:
+
+```text
+dimos/robot/deeprobotics/m20/config/mujoco_sim.json
+```
+
+Edit that file and restart `m20-dan-nav-sim`; opening Python source is not
+required. The blueprint loads and validates the JSON at startup.
 
 | Parameter | Default | Effect |
 | --- | --- | --- |
@@ -35,11 +42,20 @@ Sensor settings are validated `ModuleConfig` parameters on
 | `pointcloud_fov_deg` | `160` | Depth projection field of view |
 | `pointcloud_voxel_size` | `0.05` | Open3D downsampling resolution in metres |
 
-The generic defaults preserve the existing G1/Go2 simulator behavior. The
-`m20-dan-nav-sim` blueprint explicitly sets `enable_color=False` and disables
-both image publications. To test the synthetic front image, change that
-blueprint to `enable_color=True, publish_front_image=True`; leave
-`publish_rear_image=False` unless duplicate data is intentionally required.
+The generic defaults preserve the existing G1/Go2 simulator behavior. The M20
+JSON profile sets `enable_color=false` and disables both image publications.
+To test the synthetic front image, set `enable_color=true` and
+`publish_front_image=true` in the JSON; leave `publish_rear_image=false` unless
+duplicate data is intentionally required.
+
+An alternate complete config can be selected with `--config`, and one-off
+values can be overridden without editing the file:
+
+```bash
+dimos run m20-dan-nav-sim --config /path/to/custom.json
+dimos run m20-dan-nav-sim \
+  --option m20mujocosimconnection.pointcloud_fps=1.0
+```
 
 Use `m20-dan-nav` for the real M20 connection. The simulation blueprint does
 not include `M20Connection`, so starting it cannot send commands to the robot.
