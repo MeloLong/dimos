@@ -14,6 +14,8 @@
 
 """Validated sensor settings for the legacy Unitree MuJoCo connection."""
 
+from typing import Annotated
+
 from pydantic import Field
 
 from dimos.protocol.service.spec import BaseConfig
@@ -47,3 +49,6 @@ class MujocoSensorConfig(BaseConfig):
     )
     pointcloud_fov_deg: float = Field(default=DEPTH_CAMERA_FOV, gt=0, lt=180)
     pointcloud_voxel_size: float = Field(default=LIDAR_RESOLUTION, gt=0)
+    pointcloud_geom_groups: tuple[
+        Annotated[int, Field(ge=0, le=5)], ...
+    ] = Field(default=(0, 1, 2), min_length=1)

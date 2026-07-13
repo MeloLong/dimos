@@ -78,10 +78,11 @@ def test_m20_navigation_sim_uses_lightweight_sensor_profile() -> None:
         atom for atom in m20_dan_nav_sim.blueprints if atom.module is M20MujocoSimConnection
     )
 
-    assert atom.kwargs["enable_color"] is False
-    assert atom.kwargs["publish_front_image"] is False
+    assert atom.kwargs["enable_color"] is True
+    assert atom.kwargs["publish_front_image"] is True
     assert atom.kwargs["publish_rear_image"] is False
     assert atom.kwargs["enable_pointcloud"] is True
+    assert atom.kwargs["pointcloud_geom_groups"] == (0, 1)
 
 
 def test_m20_navigation_sim_loads_sensor_profile_from_json() -> None:
@@ -109,5 +110,5 @@ def test_partial_cli_config_keeps_checked_in_sensor_defaults(tmp_path) -> None:
     config = M20MujocoSimConfig.model_validate(merged)
 
     assert config.pointcloud_fps == 1.0
-    assert not config.enable_color
-    assert not config.publish_front_image
+    assert config.enable_color
+    assert config.publish_front_image

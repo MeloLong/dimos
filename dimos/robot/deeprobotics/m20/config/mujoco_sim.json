@@ -1,13 +1,13 @@
 {
   "m20mujocosimconnection": {
-    "enable_color": false,
+    "enable_color": true,
     "color_camera_name": "head_camera",
     "color_frame_id": "camera_optical",
     "width": 640,
     "height": 360,
-    "fps": 20.0,
+    "fps": 10.0,
     "color_fov_deg": 45.0,
-    "publish_front_image": false,
+    "publish_front_image": true,
     "publish_rear_image": false,
     "enable_pointcloud": true,
     "pointcloud_fps": 2.0,
@@ -15,6 +15,10 @@
       "lidar_front_camera",
       "lidar_left_camera",
       "lidar_right_camera"
+    ],
+    "pointcloud_geom_groups": [
+      0,
+      1
     ],
     "pointcloud_fov_deg": 160.0,
     "pointcloud_voxel_size": 0.05

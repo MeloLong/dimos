@@ -38,6 +38,16 @@ def test_sensor_config_rejects_non_positive_values(field, value) -> None:
         MujocoSensorConfig(**{field: value})
 
 
+@pytest.mark.parametrize("groups", [(), (-1,), (6,)])
+def test_sensor_config_rejects_invalid_pointcloud_geom_groups(groups) -> None:
+    with pytest.raises(ValidationError):
+        MujocoSensorConfig(pointcloud_geom_groups=groups)
+
+
+def test_sensor_config_keeps_legacy_mujoco_visible_groups_by_default() -> None:
+    assert MujocoSensorConfig().pointcloud_geom_groups == (0, 1, 2)
+
+
 def test_video_shared_memory_uses_configured_shape() -> None:
     config = MujocoSensorConfig(width=4, height=3)
     writer = ShmWriter(config)

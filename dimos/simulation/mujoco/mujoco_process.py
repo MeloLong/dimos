@@ -138,7 +138,12 @@ def _run_simulation(
 
             import open3d as o3d  # type: ignore[import-untyped]
 
-        scene_option = mujoco.MjvOption()
+        color_scene_option = mujoco.MjvOption()
+        pointcloud_scene_option = mujoco.MjvOption()
+        pointcloud_scene_option.geomgroup[:] = 0
+        pointcloud_scene_option.geomgroup[
+            list(sensor_config.pointcloud_geom_groups)
+        ] = 1
 
         # Timing control
         last_video_time = float("-inf")
@@ -181,7 +186,7 @@ def _run_simulation(
                     rgb_renderer.update_scene(
                         data,
                         camera=rgb_camera_id,
-                        scene_option=scene_option,
+                        scene_option=color_scene_option,
                     )
                     shm.write_video(rgb_renderer.render())
                     last_video_time = current_time
@@ -192,7 +197,11 @@ def _run_simulation(
                 ):
                     all_points = []
                     for renderer, camera_id in pointcloud_renderers:
-                        renderer.update_scene(data, camera=camera_id, scene_option=scene_option)
+                        renderer.update_scene(
+                            data,
+                            camera=camera_id,
+                            scene_option=pointcloud_scene_option,
+                        )
                         points = depth_image_to_point_cloud(
                             renderer.render(),
                             data.cam_xpos[camera_id],
