@@ -36,6 +36,8 @@ def _get_data_dir() -> epath.Path:
 
 
 def get_assets() -> dict[str, bytes]:
+    mjx_env.ensure_menagerie_exists()
+
     data_dir = _get_data_dir()
     assets: dict[str, bytes] = {}
 

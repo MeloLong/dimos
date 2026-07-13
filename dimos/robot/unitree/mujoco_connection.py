@@ -117,6 +117,10 @@ class MujocoConnection:
             # point DYLD_LIBRARY_PATH at the real libpython directory.
             executable = sys.executable if sys.platform != "darwin" else "mjpython"
             env = os.environ.copy()
+            if sys.platform == "linux" and (
+                self.global_config.viewer == "none" or not env.get("DISPLAY")
+            ):
+                env.setdefault("MUJOCO_GL", "egl")
             if sys.platform == "darwin":
                 # on some systems mujoco looks in the wrong place for shared libraries. So we force it look in the right place
                 libdir = Path(sysconfig.get_config_var("LIBDIR") or "")

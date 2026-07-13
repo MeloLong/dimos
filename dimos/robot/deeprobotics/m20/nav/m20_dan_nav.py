@@ -35,8 +35,12 @@ from dimos.robot.deeprobotics.m20.blueprints.basic import (
     m20_rerun_blueprint,
 )
 from dimos.robot.deeprobotics.m20.connection import M20Connection
+from dimos.robot.deeprobotics.m20.mujoco_sim import M20MujocoSimConnection
 from dimos.robot.deeprobotics.m20.nav.odom2posestamped import OdomToPoseStamped
 from dimos.robot.deeprobotics.m20.tf import M20TF
+from dimos.visualization.rerun.bridge import RerunBridgeModule
+from dimos.visualization.rerun.websocket_server import RerunWebSocketServer
+from dimos.web.websocket_vis.websocket_vis_module import WebsocketVisModule
 
 voxel_size = 0.05
 m20_width_clearance = 0.45
@@ -105,15 +109,14 @@ _m20_nav_rerun_config = {
     },
 }
 
-_m20_simple_nav_base = autoconnect(
-    _m20_dan_rerun,
-    M20Connection.blueprint(),
-    M20TF.blueprint().remappings([(M20TF, "odometry", "dimos/slam_odom")]),
+_m20_dan_rerun = autoconnect(
+    RerunBridgeModule.blueprint(**_m20_nav_rerun_config),
+    RerunWebSocketServer.blueprint(),
+    WebsocketVisModule.blueprint(),
 )
 
-
-m20_dan_nav = autoconnect(
-    _m20_simple_nav_base,
+_m20_dan_nav_core = autoconnect(
+    _m20_dan_rerun,
     _m20_slam_ray_tracer,
     # CostMapper.blueprint(
     #     config=HeightCostConfig(
@@ -197,4 +200,29 @@ m20_dan_nav = autoconnect(
     ),
     DanHolonomicTC.blueprint(run_profile="walk"),
     MovementManager.blueprint(),
+)
+
+m20_dan_nav = autoconnect(
+    _m20_dan_nav_core,
+    M20Connection.blueprint(),
+    M20TF.blueprint().remappings([(M20TF, "odometry", "dimos/slam_odom")]),
 ).global_config(n_workers=10, robot_model="m20")
+
+m20_dan_nav_sim = autoconnect(
+    _m20_dan_nav_core,
+    M20MujocoSimConnection.blueprint().remappings(
+        [
+            (M20MujocoSimConnection, "slam_odom", "dimos/slam_odom"),
+            (
+                M20MujocoSimConnection,
+                "slam_aligned_points",
+                "dimos/slam_aligned_points",
+            ),
+        ]
+    ),
+    M20TF.blueprint().remappings([(M20TF, "odometry", "dimos/slam_odom")]),
+).global_config(
+    n_workers=11,
+    robot_model="unitree_go2",
+    simulation="mujoco",
+)
