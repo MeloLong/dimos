@@ -210,7 +210,15 @@ m20_dan_nav = autoconnect(
 
 m20_dan_nav_sim = autoconnect(
     _m20_dan_nav_core,
-    M20MujocoSimConnection.blueprint().remappings(
+    M20MujocoSimConnection.blueprint(
+        # Navigation only needs odometry and point clouds. The legacy RGB
+        # renderer is expensive under software EGL and has no real M20 camera.
+        enable_color=False,
+        publish_front_image=False,
+        publish_rear_image=False,
+        enable_pointcloud=True,
+        pointcloud_fps=2.0,
+    ).remappings(
         [
             (M20MujocoSimConnection, "slam_odom", "dimos/slam_odom"),
             (

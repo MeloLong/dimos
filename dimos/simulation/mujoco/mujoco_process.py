@@ -28,21 +28,13 @@ import mujoco
 from mujoco import viewer
 import numpy as np
 from numpy.typing import NDArray
-import open3d as o3d  # type: ignore[import-untyped]
 
 from dimos.core.global_config import GlobalConfig
 from dimos.msgs.sensor_msgs.PointCloud2 import PointCloud2
-from dimos.simulation.mujoco.constants import (
-    DEPTH_CAMERA_FOV,
-    LIDAR_FPS,
-    LIDAR_RESOLUTION,
-    VIDEO_FPS,
-    VIDEO_HEIGHT,
-    VIDEO_WIDTH,
-)
 from dimos.simulation.mujoco.depth_camera import depth_image_to_point_cloud
 from dimos.simulation.mujoco.model import load_model, load_scene_xml
 from dimos.simulation.mujoco.person_on_track import PersonPositionController
+from dimos.simulation.mujoco.sensor_config import MujocoSensorConfig
 from dimos.simulation.mujoco.shared_memory import ShmReader
 from dimos.utils.logging_config import setup_logger
 
@@ -77,7 +69,19 @@ class MockController:
         pass
 
 
-def _run_simulation(config: GlobalConfig, shm: ShmReader) -> None:
+def _camera_id(model: mujoco.MjModel, camera_name: str) -> int:
+    camera_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_CAMERA, camera_name)
+    if camera_id < 0:
+        raise ValueError(f"MuJoCo camera {camera_name!r} does not exist in the model")
+    return camera_id
+
+
+def _run_simulation(
+    config: GlobalConfig,
+    shm: ShmReader,
+    sensor_config: MujocoSensorConfig | None = None,
+) -> None:
+    sensor_config = sensor_config or MujocoSensorConfig()
     robot_name = config.robot_model or "unitree_go1"
     if robot_name == "unitree_go2":
         robot_name = "unitree_go1"
@@ -102,17 +106,7 @@ def _run_simulation(config: GlobalConfig, shm: ShmReader) -> None:
 
     mujoco.mj_forward(model, data)
 
-    camera_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_CAMERA, "head_camera")
-    lidar_camera_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_CAMERA, "lidar_front_camera")
-
     person_position_controller = PersonPositionController(model)
-
-    lidar_left_camera_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_CAMERA, "lidar_left_camera")
-    lidar_right_camera_id = mujoco.mj_name2id(
-        model, mujoco.mjtObj.mjOBJ_CAMERA, "lidar_right_camera"
-    )
-
-    shm.signal_ready()
 
     viewer_context = (
         viewer.launch_passive(model, data, show_left_ui=False, show_right_ui=False)
@@ -121,26 +115,37 @@ def _run_simulation(config: GlobalConfig, shm: ShmReader) -> None:
     )
 
     with viewer_context as m_viewer:
-        camera_size = (VIDEO_WIDTH, VIDEO_HEIGHT)
+        rgb_renderer = None
+        rgb_camera_id = None
+        if sensor_config.enable_color:
+            rgb_camera_id = _camera_id(model, sensor_config.color_camera_name)
+            rgb_renderer = mujoco.Renderer(
+                model,
+                height=sensor_config.height,
+                width=sensor_config.width,
+            )
 
-        # Create renderers
-        rgb_renderer = mujoco.Renderer(model, height=camera_size[1], width=camera_size[0])
-        depth_renderer = mujoco.Renderer(model, height=camera_size[1], width=camera_size[0])
-        depth_renderer.enable_depth_rendering()
+        pointcloud_renderers: list[tuple[mujoco.Renderer, int]] = []
+        if sensor_config.enable_pointcloud:
+            for camera_name in sensor_config.pointcloud_camera_names:
+                renderer = mujoco.Renderer(
+                    model,
+                    height=sensor_config.height,
+                    width=sensor_config.width,
+                )
+                renderer.enable_depth_rendering()
+                pointcloud_renderers.append((renderer, _camera_id(model, camera_name)))
 
-        depth_left_renderer = mujoco.Renderer(model, height=camera_size[1], width=camera_size[0])
-        depth_left_renderer.enable_depth_rendering()
-
-        depth_right_renderer = mujoco.Renderer(model, height=camera_size[1], width=camera_size[0])
-        depth_right_renderer.enable_depth_rendering()
+            import open3d as o3d  # type: ignore[import-untyped]
 
         scene_option = mujoco.MjvOption()
 
         # Timing control
-        last_video_time = 0.0
-        last_lidar_time = 0.0
-        video_interval = 1.0 / VIDEO_FPS
-        lidar_interval = 1.0 / LIDAR_FPS
+        last_video_time = float("-inf")
+        last_pointcloud_time = float("-inf")
+        video_interval = 1.0 / sensor_config.fps
+        pointcloud_interval = 1.0 / sensor_config.pointcloud_fps
+        simulation_interval = model.opt.timestep * config.mujoco_steps_per_frame
 
         if m_viewer is not None:
             m_viewer.cam.lookat = config.mujoco_camera_position_float[0:3]
@@ -148,105 +153,84 @@ def _run_simulation(config: GlobalConfig, shm: ShmReader) -> None:
             m_viewer.cam.azimuth = config.mujoco_camera_position_float[4]
             m_viewer.cam.elevation = config.mujoco_camera_position_float[5]
 
-        while (m_viewer is None or m_viewer.is_running()) and not shm.should_stop():
-            step_start = time.time()
+        shm.signal_ready()
 
-            # Step simulation
-            for _ in range(config.mujoco_steps_per_frame):
-                mujoco.mj_step(model, data)
+        try:
+            while (m_viewer is None or m_viewer.is_running()) and not shm.should_stop():
+                step_start = time.monotonic()
 
-            person_position_controller.tick(data)
+                for _ in range(config.mujoco_steps_per_frame):
+                    mujoco.mj_step(model, data)
 
-            if m_viewer is not None:
-                m_viewer.sync()
+                person_position_controller.tick(data)
 
-            # Always update odometry
-            pos = data.qpos[0:3].copy()
-            quat = data.qpos[3:7].copy()  # (w, x, y, z)
-            shm.write_odom(pos, quat, time.time())
+                if m_viewer is not None:
+                    m_viewer.sync()
 
-            current_time = time.time()
+                pos = data.qpos[0:3].copy()
+                quat = data.qpos[3:7].copy()  # (w, x, y, z)
+                shm.write_odom(pos, quat, time.time())
 
-            # Video rendering
-            if current_time - last_video_time >= video_interval:
-                rgb_renderer.update_scene(data, camera=camera_id, scene_option=scene_option)
-                pixels = rgb_renderer.render()
-                shm.write_video(pixels)
-                last_video_time = current_time
+                current_time = time.monotonic()
 
-            # Lidar/depth rendering
-            if current_time - last_lidar_time >= lidar_interval:
-                # Render all depth cameras
-                depth_renderer.update_scene(data, camera=lidar_camera_id, scene_option=scene_option)
-                depth_front = depth_renderer.render()
-
-                depth_left_renderer.update_scene(
-                    data, camera=lidar_left_camera_id, scene_option=scene_option
-                )
-                depth_left = depth_left_renderer.render()
-
-                depth_right_renderer.update_scene(
-                    data, camera=lidar_right_camera_id, scene_option=scene_option
-                )
-                depth_right = depth_right_renderer.render()
-
-                shm.write_depth(depth_front, depth_left, depth_right)
-
-                # Process depth images into lidar message
-                all_points = []
-                cameras_data = [
-                    (
-                        depth_front,
-                        data.cam_xpos[lidar_camera_id],
-                        data.cam_xmat[lidar_camera_id].reshape(3, 3),
-                    ),
-                    (
-                        depth_left,
-                        data.cam_xpos[lidar_left_camera_id],
-                        data.cam_xmat[lidar_left_camera_id].reshape(3, 3),
-                    ),
-                    (
-                        depth_right,
-                        data.cam_xpos[lidar_right_camera_id],
-                        data.cam_xmat[lidar_right_camera_id].reshape(3, 3),
-                    ),
-                ]
-
-                for depth_image, camera_pos, camera_mat in cameras_data:
-                    points = depth_image_to_point_cloud(
-                        depth_image, camera_pos, camera_mat, fov_degrees=DEPTH_CAMERA_FOV
+                if (
+                    rgb_renderer is not None
+                    and rgb_camera_id is not None
+                    and current_time - last_video_time >= video_interval
+                ):
+                    rgb_renderer.update_scene(
+                        data,
+                        camera=rgb_camera_id,
+                        scene_option=scene_option,
                     )
-                    if points.size > 0:
-                        all_points.append(points)
+                    shm.write_video(rgb_renderer.render())
+                    last_video_time = current_time
 
-                if all_points:
-                    combined_points = np.vstack(all_points)
-                    pcd = o3d.geometry.PointCloud()
-                    pcd.points = o3d.utility.Vector3dVector(combined_points)
-                    pcd = pcd.voxel_down_sample(voxel_size=LIDAR_RESOLUTION)
+                if (
+                    pointcloud_renderers
+                    and current_time - last_pointcloud_time >= pointcloud_interval
+                ):
+                    all_points = []
+                    for renderer, camera_id in pointcloud_renderers:
+                        renderer.update_scene(data, camera=camera_id, scene_option=scene_option)
+                        points = depth_image_to_point_cloud(
+                            renderer.render(),
+                            data.cam_xpos[camera_id],
+                            data.cam_xmat[camera_id].reshape(3, 3),
+                            fov_degrees=sensor_config.pointcloud_fov_deg,
+                        )
+                        if points.size > 0:
+                            all_points.append(points)
 
-                    lidar_msg = PointCloud2(
-                        pointcloud=pcd,
-                        ts=time.time(),
-                        frame_id="world",
-                    )
-                    shm.write_lidar(lidar_msg)
+                    if all_points:
+                        pcd = o3d.geometry.PointCloud()
+                        pcd.points = o3d.utility.Vector3dVector(np.vstack(all_points))
+                        pcd = pcd.voxel_down_sample(voxel_size=sensor_config.pointcloud_voxel_size)
+                        shm.write_lidar(
+                            PointCloud2(pointcloud=pcd, ts=time.time(), frame_id="world")
+                        )
 
-                last_lidar_time = current_time
+                    last_pointcloud_time = current_time
 
-            # Control simulation speed
-            time_until_next_step = model.opt.timestep - (time.time() - step_start)
-            if time_until_next_step > 0:
-                time.sleep(time_until_next_step)
-
-        person_position_controller.stop()
+                sleep_time = simulation_interval - (time.monotonic() - step_start)
+                if sleep_time > 0:
+                    time.sleep(sleep_time)
+        finally:
+            person_position_controller.stop()
+            if rgb_renderer is not None:
+                rgb_renderer.close()
+            for renderer, _ in pointcloud_renderers:
+                renderer.close()
 
 
 if __name__ == "__main__":
     global_config = pickle.loads(base64.b64decode(sys.argv[1]))
     shm_names = json.loads(sys.argv[2])
+    sensor_config = (
+        pickle.loads(base64.b64decode(sys.argv[3])) if len(sys.argv) > 3 else MujocoSensorConfig()
+    )
 
-    shm = ShmReader(shm_names)
+    shm = ShmReader(shm_names, sensor_config)
 
     def signal_handler(_signum: int, _frame: Any) -> None:
         # Signal the main loop to exit gracefully so the viewer context
@@ -257,6 +241,6 @@ if __name__ == "__main__":
     signal.signal(signal.SIGTERM, signal_handler)
 
     try:
-        _run_simulation(global_config, shm)
+        _run_simulation(global_config, shm, sensor_config)
     finally:
         shm.cleanup()

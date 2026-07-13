@@ -23,6 +23,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from pydantic import model_validator
 from reactivex.disposable import Disposable
 
 from dimos.core.core import rpc
@@ -35,10 +36,24 @@ from dimos.msgs.sensor_msgs.Image import Image
 from dimos.msgs.sensor_msgs.PointCloud2 import PointCloud2
 from dimos.robot.unitree.mujoco_connection import MujocoConnection
 from dimos.robot.unitree.type.odometry import Odometry as SimOdometry
+from dimos.simulation.mujoco.sensor_config import MujocoSensorConfig
 
 
-class M20MujocoSimConfig(ModuleConfig):
-    pass
+class M20MujocoSimConfig(ModuleConfig, MujocoSensorConfig):
+    """M20 topic publication plus legacy MuJoCo sensor compute settings."""
+
+    publish_front_image: bool = True
+    publish_rear_image: bool = False
+
+    @model_validator(mode="after")
+    def validate_image_publication(self) -> M20MujocoSimConfig:
+        if not self.enable_color and (self.publish_front_image or self.publish_rear_image):
+            raise ValueError("image publication requires enable_color=True")
+        return self
+
+    def sensor_config(self) -> MujocoSensorConfig:
+        fields = set(MujocoSensorConfig.model_fields)
+        return MujocoSensorConfig.model_validate(self.model_dump(include=fields))
 
 
 class M20MujocoSimConnection(Module):
@@ -62,15 +77,17 @@ class M20MujocoSimConnection(Module):
         # Keep the DimOS/Rerun viewer available while forcing MuJoCo itself to
         # run as a background data source without opening its own window.
         sim_config = self.config.g.model_copy(update={"viewer": "none"})
-        self.connection = MujocoConnection(sim_config)
+        self.connection = MujocoConnection(sim_config, self.config.sensor_config())
         self.connection.start()
 
         self.register_disposable(Disposable(self.cmd_vel.subscribe(self.move)))
         self.register_disposable(self.connection.odom_stream().subscribe(self._publish_odom))
-        self.register_disposable(
-            self.connection.lidar_stream().subscribe(self.slam_aligned_points.publish)
-        )
-        self.register_disposable(self.connection.video_stream().subscribe(self._publish_video))
+        if self.config.enable_pointcloud:
+            self.register_disposable(
+                self.connection.lidar_stream().subscribe(self.slam_aligned_points.publish)
+            )
+        if self.config.enable_color:
+            self.register_disposable(self.connection.video_stream().subscribe(self._publish_video))
 
     @rpc
     def stop(self) -> None:
@@ -90,8 +107,10 @@ class M20MujocoSimConnection(Module):
         )
 
     def _publish_video(self, image: Image) -> None:
-        self.color_image.publish(image)
-        self.color_image_rear.publish(image)
+        if self.config.publish_front_image:
+            self.color_image.publish(image)
+        if self.config.publish_rear_image:
+            self.color_image_rear.publish(image)
 
     @rpc
     def move(self, twist: Twist, duration: float = 0.0) -> bool:

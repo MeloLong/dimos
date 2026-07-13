@@ -48,12 +48,11 @@ from dimos.msgs.sensor_msgs.PointCloud2 import PointCloud2
 from dimos.robot.unitree.type.odometry import Odometry
 from dimos.simulation.mujoco.constants import (
     LAUNCHER_PATH,
-    LIDAR_FPS,
     VIDEO_CAMERA_FOV,
-    VIDEO_FPS,
     VIDEO_HEIGHT,
     VIDEO_WIDTH,
 )
+from dimos.simulation.mujoco.sensor_config import MujocoSensorConfig
 from dimos.simulation.mujoco.shared_memory import ShmWriter
 from dimos.utils.data import get_data
 from dimos.utils.logging_config import setup_logger
@@ -68,7 +67,11 @@ T = TypeVar("T")
 class MujocoConnection:
     """MuJoCo simulator connection that runs in a separate subprocess."""
 
-    def __init__(self, global_config: GlobalConfig) -> None:
+    def __init__(
+        self,
+        global_config: GlobalConfig,
+        sensor_config: MujocoSensorConfig | None = None,
+    ) -> None:
         try:
             import mujoco  # noqa: F401
         except ImportError:
@@ -84,6 +87,14 @@ class MujocoConnection:
         mjx_env.ensure_menagerie_exists()
 
         self.global_config = global_config
+        self.sensor_config = sensor_config or MujocoSensorConfig()
+        self.camera_info_static = CameraInfo.from_fov(
+            fov_deg=self.sensor_config.color_fov_deg,
+            width=self.sensor_config.width,
+            height=self.sensor_config.height,
+            axis="vertical",
+            frame_id=self.sensor_config.color_frame_id,
+        )
         self.process: subprocess.Popen[bytes] | None = None
         self.shm_data: ShmWriter | None = None
         self._last_video_seq = 0
@@ -104,9 +115,10 @@ class MujocoConnection:
     )
 
     def start(self) -> None:
-        self.shm_data = ShmWriter()
+        self.shm_data = ShmWriter(self.sensor_config)
 
         config_pickle = base64.b64encode(pickle.dumps(self.global_config)).decode("ascii")
+        sensor_config_pickle = base64.b64encode(pickle.dumps(self.sensor_config)).decode("ascii")
         shm_names_json = json.dumps(self.shm_data.shm.to_names())
 
         # Launch the subprocess
@@ -129,7 +141,13 @@ class MujocoConnection:
                     env["DYLD_LIBRARY_PATH"] = f"{libdir}:{existing}" if existing else str(libdir)
 
             self.process = subprocess.Popen(
-                [executable, str(LAUNCHER_PATH), config_pickle, shm_names_json],
+                [
+                    executable,
+                    str(LAUNCHER_PATH),
+                    config_pickle,
+                    shm_names_json,
+                    sensor_config_pickle,
+                ],
                 stderr=subprocess.PIPE,
                 env=env,
             )
@@ -329,7 +347,11 @@ class MujocoConnection:
 
     @functools.cache
     def lidar_stream(self) -> Observable[PointCloud2]:
-        return self._create_stream(self.get_lidar_message, LIDAR_FPS, "Lidar")
+        return self._create_stream(
+            self.get_lidar_message,
+            self.sensor_config.pointcloud_fps,
+            "Lidar",
+        )
 
     @functools.cache
     def odom_stream(self) -> Observable[Odometry]:
@@ -342,7 +364,7 @@ class MujocoConnection:
             # MuJoCo renderer returns RGB uint8 frames; Image.from_numpy defaults to BGR.
             return Image.from_numpy(frame, format=ImageFormat.RGB) if frame is not None else None
 
-        return self._create_stream(get_video_as_image, VIDEO_FPS, "Video")
+        return self._create_stream(get_video_as_image, self.sensor_config.fps, "Video")
 
     def move(self, twist: Twist, duration: float = 0.0) -> bool:
         if self._is_cleaned_up or self.shm_data is None:

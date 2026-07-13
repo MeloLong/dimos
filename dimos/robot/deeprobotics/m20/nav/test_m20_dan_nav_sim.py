@@ -1,5 +1,11 @@
+from pydantic import ValidationError
+import pytest
+
 from dimos.robot.deeprobotics.m20.connection import M20Connection
-from dimos.robot.deeprobotics.m20.mujoco_sim import M20MujocoSimConnection
+from dimos.robot.deeprobotics.m20.mujoco_sim import (
+    M20MujocoSimConfig,
+    M20MujocoSimConnection,
+)
 from dimos.robot.deeprobotics.m20.nav.m20_dan_nav import m20_dan_nav, m20_dan_nav_sim
 
 
@@ -23,3 +29,49 @@ def test_sim_outputs_feed_wd_slam_topics() -> None:
         m20_dan_nav_sim.remapping_map[(M20MujocoSimConnection, "slam_aligned_points")]
         == "dimos/slam_aligned_points"
     )
+
+
+def test_rear_image_is_not_published_by_default() -> None:
+    config = M20MujocoSimConfig()
+
+    assert config.enable_color
+    assert config.publish_front_image
+    assert not config.publish_rear_image
+
+
+def test_disabling_color_requires_disabling_image_topics() -> None:
+    with pytest.raises(ValidationError, match="image publication requires enable_color"):
+        M20MujocoSimConfig(enable_color=False)
+
+    config = M20MujocoSimConfig(
+        enable_color=False,
+        publish_front_image=False,
+        publish_rear_image=False,
+    )
+    assert not config.sensor_config().enable_color
+
+
+def test_sensor_parameters_are_projected_to_connection_config() -> None:
+    config = M20MujocoSimConfig(
+        width=320,
+        height=180,
+        fps=5,
+        pointcloud_fps=1,
+        pointcloud_voxel_size=0.1,
+    )
+
+    sensors = config.sensor_config()
+    assert (sensors.width, sensors.height, sensors.fps) == (320, 180, 5)
+    assert sensors.pointcloud_fps == 1
+    assert sensors.pointcloud_voxel_size == 0.1
+
+
+def test_m20_navigation_sim_uses_lightweight_sensor_profile() -> None:
+    atom = next(
+        atom for atom in m20_dan_nav_sim.blueprints if atom.module is M20MujocoSimConnection
+    )
+
+    assert atom.kwargs["enable_color"] is False
+    assert atom.kwargs["publish_front_image"] is False
+    assert atom.kwargs["publish_rear_image"] is False
+    assert atom.kwargs["enable_pointcloud"] is True

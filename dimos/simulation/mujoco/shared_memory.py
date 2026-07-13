@@ -22,15 +22,11 @@ import numpy as np
 from numpy.typing import NDArray
 
 from dimos.msgs.sensor_msgs.PointCloud2 import PointCloud2
-from dimos.simulation.mujoco.constants import VIDEO_HEIGHT, VIDEO_WIDTH
+from dimos.simulation.mujoco.sensor_config import MujocoSensorConfig
 from dimos.utils.logging_config import setup_logger
 
 logger = setup_logger()
 
-# Video buffer: VIDEO_WIDTH x VIDEO_HEIGHT x 3 RGB
-_video_size = VIDEO_WIDTH * VIDEO_HEIGHT * 3
-# Depth buffers: 3 cameras x VIDEO_WIDTH x VIDEO_HEIGHT float32
-_depth_size = VIDEO_WIDTH * VIDEO_HEIGHT * 4  # float32 = 4 bytes
 # Odometry buffer: position(3) + quaternion(4) + timestamp(1) = 8 floats
 _odom_size = 8 * 8  # 8 float64 values
 # Command buffer: linear(3) + angular(3) = 6 floats
@@ -42,11 +38,7 @@ _seq_size = 8 * 8  # 8 int64 values for different data types
 # Control buffer: ready flag + stop flag
 _control_size = 2 * 4  # 2 int32 values
 
-_shm_sizes = {
-    "video": _video_size,
-    "depth_front": _depth_size,
-    "depth_left": _depth_size,
-    "depth_right": _depth_size,
+_fixed_shm_sizes = {
     "odom": _odom_size,
     "cmd": _cmd_size,
     "lidar": _lidar_size,
@@ -54,6 +46,11 @@ _shm_sizes = {
     "seq": _seq_size,
     "control": _control_size,
 }
+
+
+def _shm_sizes(config: MujocoSensorConfig) -> dict[str, int]:
+    video_size = config.width * config.height * 3 if config.enable_color else 1
+    return {"video": video_size, **_fixed_shm_sizes}
 
 
 def _unregister(shm: SharedMemory) -> SharedMemory:
@@ -67,9 +64,6 @@ def _unregister(shm: SharedMemory) -> SharedMemory:
 @dataclass(frozen=True)
 class ShmSet:
     video: SharedMemory
-    depth_front: SharedMemory
-    depth_left: SharedMemory
-    depth_right: SharedMemory
     odom: SharedMemory
     cmd: SharedMemory
     lidar: SharedMemory
@@ -79,25 +73,28 @@ class ShmSet:
 
     @classmethod
     def from_names(cls, shm_names: dict[str, str]) -> "ShmSet":
-        return cls(**{k: _unregister(SharedMemory(name=shm_names[k])) for k in _shm_sizes.keys()})
+        return cls(**{k: _unregister(SharedMemory(name=name)) for k, name in shm_names.items()})
 
     @classmethod
-    def from_sizes(cls) -> "ShmSet":
-        return cls(**{k: SharedMemory(create=True, size=_shm_sizes[k]) for k in _shm_sizes.keys()})
+    def from_sizes(cls, config: MujocoSensorConfig) -> "ShmSet":
+        return cls(
+            **{k: SharedMemory(create=True, size=size) for k, size in _shm_sizes(config).items()}
+        )
 
     def to_names(self) -> dict[str, str]:
-        return {k: getattr(self, k).name for k in _shm_sizes.keys()}
+        return {k: shm.name for k, shm in self.__dict__.items()}
 
     def as_list(self) -> list[SharedMemory]:
-        return [getattr(self, k) for k in _shm_sizes.keys()]
+        return list(self.__dict__.values())
 
 
 class ShmReader:
     shm: ShmSet
     _last_cmd_seq: int
 
-    def __init__(self, shm_names: dict[str, str]) -> None:
+    def __init__(self, shm_names: dict[str, str], config: MujocoSensorConfig) -> None:
         self.shm = ShmSet.from_names(shm_names)
+        self.config = config
         self._last_cmd_seq = 0
 
     def signal_ready(self) -> None:
@@ -114,31 +111,12 @@ class ShmReader:
 
     def write_video(self, pixels: NDArray[Any]) -> None:
         video_array: NDArray[Any] = np.ndarray(
-            (VIDEO_HEIGHT, VIDEO_WIDTH, 3), dtype=np.uint8, buffer=self.shm.video.buf
+            (self.config.height, self.config.width, 3),
+            dtype=np.uint8,
+            buffer=self.shm.video.buf,
         )
         video_array[:] = pixels
         self._increment_seq(0)
-
-    def write_depth(self, front: NDArray[Any], left: NDArray[Any], right: NDArray[Any]) -> None:
-        # Front camera
-        depth_array: NDArray[Any] = np.ndarray(
-            (VIDEO_HEIGHT, VIDEO_WIDTH), dtype=np.float32, buffer=self.shm.depth_front.buf
-        )
-        depth_array[:] = front
-
-        # Left camera
-        depth_array = np.ndarray(
-            (VIDEO_HEIGHT, VIDEO_WIDTH), dtype=np.float32, buffer=self.shm.depth_left.buf
-        )
-        depth_array[:] = left
-
-        # Right camera
-        depth_array = np.ndarray(
-            (VIDEO_HEIGHT, VIDEO_WIDTH), dtype=np.float32, buffer=self.shm.depth_right.buf
-        )
-        depth_array[:] = right
-
-        self._increment_seq(1)
 
     def write_odom(self, pos: NDArray[Any], quat: NDArray[Any], timestamp: float) -> None:
         odom_array: NDArray[Any] = np.ndarray((8,), dtype=np.float64, buffer=self.shm.odom.buf)
@@ -196,8 +174,9 @@ class ShmReader:
 class ShmWriter:
     shm: ShmSet
 
-    def __init__(self) -> None:
-        self.shm = ShmSet.from_sizes()
+    def __init__(self, config: MujocoSensorConfig | None = None) -> None:
+        self.config = config or MujocoSensorConfig()
+        self.shm = ShmSet.from_sizes(self.config)
 
         seq_array: NDArray[Any] = np.ndarray((8,), dtype=np.int64, buffer=self.shm.seq.buf)
         seq_array[:] = 0
@@ -220,7 +199,9 @@ class ShmWriter:
         seq = self._get_seq(0)
         if seq > 0:
             video_array: NDArray[Any] = np.ndarray(
-                (VIDEO_HEIGHT, VIDEO_WIDTH, 3), dtype=np.uint8, buffer=self.shm.video.buf
+                (self.config.height, self.config.width, 3),
+                dtype=np.uint8,
+                buffer=self.shm.video.buf,
             )
             return video_array.copy(), seq
         return None, 0
