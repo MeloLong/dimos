@@ -1,21 +1,26 @@
-# Issue: DanLocalPlanner Can Forward a Stale Path After a New Goal
+# Issue: M20 Dan Navigation Problems After Goal Replacement
 
 - Status: Open
-- Priority: High
-- Scope: M20 Dan navigation goal replacement and path commit gating
+- Overall priority: High
+- Scope: M20 Dan navigation goal replacement, path commit gating, and runtime observability
 - Affected blueprint: `m20-dan-nav-sim`
-- Affected module: `DanLocalPlanner`
+- Affected modules: `DanLocalPlanner`, `DanHolonomicTC`, Rerun visualization
 - Discovered on: 2026-07-14
 
-## Finding
+## Overall Assessment
 
-After the robot reaches one goal, a new clicked goal can cause
-`DanLocalPlanner` to forward a path whose endpoint still belongs to the
-previous goal. This occurs when the replan lock has already been released.
+This issue contains four related problems. They do not all have the same risk:
 
-The downstream `DanHolonomicTC` then enters `path_following`, even though the
-forwarded path is not confirmed against the newly clicked goal. The robot can
-continue tracking an old or stale route and fail to converge to the new goal.
+| No. | Problem | Impact | Potential hazard |
+| --- | --- | --- | --- |
+| 1 | Stale path can be committed after a new goal | High | Robot may follow the previous route instead of the latest command |
+| 2 | Tracking control has no explicit goal/path consistency guard | High | A stale route can enter motion control without being rejected downstream |
+| 3 | Rerun can retain and display an old path | Medium | Operator may believe the visible route belongs to the latest goal |
+| 4 | Logs and tests do not expose or cover the failure boundary | Medium | The defect can recur and be difficult to diagnose before real-robot testing |
+
+Problems 1 and 2 affect navigation behavior and must be resolved before
+relying on repeated-goal testing. Problem 3 is primarily visualization, but it
+can conceal problems 1 and 2. Problem 4 is an engineering and safety-net gap.
 
 ## Evidence From Simulation
 
@@ -29,36 +34,40 @@ The run log
 - `10:46:44`: another path following cycle started;
 - `10:50:28`: the follower stopped without another `Reached goal position` event.
 
-The same log contains no `no path between start and goal` warning or planning
-error. This means the third failure is not proven to be an MLS unreachable-goal
-result. It is consistent with a non-empty stale path being accepted and then
-not reaching the newly clicked target.
+The log contains no `no path between start and goal` warning or planning error.
+The third cycle is therefore not proven to be an MLS unreachable-goal result.
+It is consistent with a non-empty stale path being accepted and then failing to
+reach the newly clicked target.
 
-## Root Cause
+## 1. Stale Path Can Be Committed After a New Goal
 
-`_ReplanGate.on_planner_path` checks a fresh clicked goal first:
+**Severity: High. Functional navigation defect.**
 
-```text
-fresh goal + path endpoint within tolerance -> commit and disarm
-```
-
-However, when the endpoint does not match the fresh goal, execution falls
-through to the independent lock-release check:
-
-```text
-lock released -> commit path
-```
-
-There is no unconditional rejection while `_armed_goal` is still waiting for a
-matching path. Therefore a stale path can pass through whenever the robot has
-advanced at least `lock_replan` metres on the previous committed path.
+When a new goal is armed, `_ReplanGate.on_planner_path` first checks whether the
+path endpoint matches the new goal. If it does not match, the code falls
+through to the independent `lock_replan` release check. Once the lock is
+released, the stale path is committed anyway.
 
 The simulation config uses `lock_replan=1.0` in
 `dimos/robot/deeprobotics/m20/nav/m20_dan_nav.py`.
 
-## Minimal Reproduction
+### Impact
 
-The following state reproduces the defect without running MuJoCo:
+- A new click can appear to be accepted while the previous route is still
+  being followed.
+- The robot can enter `path_following` without the committed path ending at the
+  latest goal.
+- The robot may stop at the old goal, move in an unexpected direction, or fail
+  to converge to the new goal.
+
+### Potential Hazard
+
+On a real robot, the vehicle could continue moving toward a previously selected
+location after the operator believes a new command has replaced it. Near
+obstacles, people, or platform edges, this is a motion-safety risk rather than
+only a navigation-quality issue.
+
+### Reproduction
 
 1. Create a gate with `lock_replan=0.5`.
 2. Commit a path ending at `(5.0, 0.0)`.
@@ -73,56 +82,118 @@ forwarded=True
 armed_goal=[9.0, 0.0]
 ```
 
-The stale path is forwarded while the new goal remains armed. The existing
-test `test_fresh_click_does_not_commit_a_stale_replan` only exercises the case
-where the lock is still held, so all current local-planner tests pass while
-this released-lock case remains uncovered.
+The stale path is forwarded while the new goal remains armed.
 
-## Impact
+## 2. DanHolonomicTC Has No Explicit Goal/Path Consistency Guard
 
-- A new goal can appear to be accepted while the controller is still following
-  the previous route.
-- The viewer can show a valid-looking green path that does not correspond to
-  the latest click.
-- The controller may remain in `path_following` without reaching the intended
-  goal, especially after the robot has stopped at a previous goal or near an
-  obstacle.
-- Debugging is difficult because the current logs do not include goal IDs,
-  path endpoint coordinates, or the gate's commit reason.
+**Severity: High. Missing downstream safety invariant.**
 
-## Expected Resolution
+`DanHolonomicTC` receives a `Path` but no goal identity, goal revision, or
+validated relationship between the path endpoint and the latest clicked goal.
+When a non-empty path arrives, it starts or updates tracking. The controller
+therefore relies entirely on `DanLocalPlanner` to enforce goal consistency.
 
-While a fresh goal is armed, the gate must suppress every non-empty planner path
-whose endpoint is outside `goal_commit_tolerance_m`, regardless of whether
-`lock_replan` has elapsed. The lock-release rule should only be considered once
-there is no pending fresh goal.
+### Impact
 
-The empty-path safety behavior must remain unchanged: an empty path is forwarded
-immediately, the committed path is dropped, and the controller is stopped.
+- A gate mistake is passed directly into the motion controller.
+- The controller cannot distinguish a valid replan from an old in-flight path.
+- Future planners or adapters can reintroduce the same failure if they publish
+  paths without preserving goal identity.
 
-## Acceptance Criteria
+### Potential Hazard
 
-- A fresh goal cannot commit a path ending outside
-  `goal_commit_tolerance_m`, even when `lock_replan` is already released.
-- A matching path commits once and consumes the armed goal.
-- Stale paths remain suppressed until a matching path or an empty safety-stop
-  path arrives.
-- A regression test covers a released lock followed by a stale path.
-- Tests retain the current behavior for cold start, in-lock stale paths, goal
-  replacement, cancellation, and empty-path safety stops.
-- Runtime diagnostics expose at least the clicked goal, committed path endpoint,
-  and whether a path was committed because of a fresh goal or lock release.
+This removes a defense-in-depth layer from the command chain. A stale path can
+be converted into velocity commands even though it does not correspond to the
+operator's latest goal. The immediate hazard is unintended motion; the longer
+term hazard is that the system contract is not safe across module boundaries.
 
-## Related Observability Issue
+### Expected Direction
 
-`m20_dan_nav.py` currently returns `None` for empty paths in the Rerun visual
-override, intentionally retaining the last displayed route. This can make a
-stale path remain visible after a planner stop and should be considered when
-validating the fix, although it is a separate visualization concern.
+The short-term fix belongs in `DanLocalPlanner`: while a fresh goal is armed,
+reject every non-empty path whose endpoint is outside
+`goal_commit_tolerance_m`, regardless of lock state. A stronger architecture
+should also carry a goal revision or validated endpoint through the planner to
+the tracking controller.
+
+## 3. Rerun Can Display an Old Path After a Stop or Empty Plan
+
+**Severity: Medium. Primarily visualization and operator awareness.**
+
+`m20_dan_nav.py` returns `None` from the Rerun visual override when the path is
+empty. The documented intent is to keep the last displayed route visible.
+
+### Impact
+
+- The green route in Rerun may not represent the current planner output.
+- An empty safety-stop path can leave an old route visible on screen.
+- Operators may interpret stale visualization as proof that the latest goal has
+  a valid route.
+
+### Potential Hazard
+
+This does not itself issue motion commands, so it is not the primary cause of
+unintended movement. Its hazard is diagnostic: it can delay recognition of
+problem 1 or 2 and cause an operator to make decisions based on an obsolete
+route.
+
+### Expected Direction
+
+Separate the displayed path state from the active controller path. The viewer
+should clear or explicitly mark a stopped/invalid route, while retaining old
+paths only in a visibly historical layer.
+
+## 4. Runtime Logs and Tests Do Not Cover the Failure Boundary
+
+**Severity: Medium. Verification and maintainability gap.**
+
+The existing test
+`test_fresh_click_does_not_commit_a_stale_replan` only checks a stale path while
+the replan lock is still held. It does not test a fresh goal after the lock has
+already been released.
+
+The runtime logs also omit the clicked goal coordinates, path endpoint,
+goal/path revision, and gate commit reason. The log can show that tracking
+started, but not why that path was accepted.
+
+### Impact
+
+- The current six local-planner tests pass while the released-lock defect is
+  still present.
+- A future refactor can reintroduce the behavior without a failing test.
+- Field reports cannot easily distinguish no-path planning failure, stale-path
+  forwarding, controller non-convergence, and stale visualization.
+
+### Potential Hazard
+
+The main risk is delayed detection. A defect can appear to pass simulation and
+reach hardware testing without a clear safety boundary or forensic evidence.
+This increases the chance that incorrect motion is discovered only during
+interactive operation.
+
+### Required Test and Diagnostic Coverage
+
+- Add a regression test for a released lock followed by a stale path.
+- Keep coverage for cold start, in-lock stale paths, goal replacement,
+  cancellation, and empty-path safety stops.
+- Log the goal revision or coordinates, candidate path endpoint, and commit
+  reason (`fresh_goal`, `lock_release`, `cold_start`, or `empty_stop`).
+
+## Required Resolution
+
+1. While a fresh goal is armed, suppress every non-empty path whose endpoint is
+   outside `goal_commit_tolerance_m`.
+2. Do not allow lock release to override a pending goal-match requirement.
+3. Preserve the empty-path safety behavior: forward it immediately, drop the
+   committed path, and stop the controller.
+4. Add goal/path identity or revision information at the module boundary where
+   practical.
+5. Make stopped or invalid routes distinguishable from the active Rerun path.
+6. Add regression tests and structured diagnostics for each commit reason.
 
 ## Relevant Files
 
 - `dimos/navigation/dannav/local_planner/module.py`
 - `dimos/navigation/dannav/local_planner/test_dan_local_planner.py`
+- `dimos/navigation/dannav/holonomic_tc/module.py`
 - `dimos/robot/deeprobotics/m20/nav/m20_dan_nav.py`
 - `logs/20260714-103638-m20-dan-nav-sim/main.jsonl`
