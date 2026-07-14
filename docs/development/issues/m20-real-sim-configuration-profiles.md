@@ -85,8 +85,9 @@ Additional configuration inconsistencies:
   configured planning height is 1.0 m.
 - `GlobalConfig.robot_width` and `robot_rotation_diameter` exist, but the active
   M20 MLS chain does not consume them.
-- `dimos/robot/deeprobotics/m20/config/mujoco_sim.json` configures only the
-  simulation sensor adapter. It is not a complete simulation run profile.
+- `dimos/robot/deeprobotics/m20/config/mujoco_sim.yaml` configures the
+  simulation sensor adapter and temporary Go1 MLS envelope. It is not yet a
+  complete simulation run profile.
 - `dimos show-config` displays `GlobalConfig`, not the fully resolved config of
   every module in the selected blueprint.
 
@@ -113,7 +114,7 @@ belong there. It is primarily the runtime/infrastructure configuration surface.
 
 The first implementation step keeps the existing Go1 MJCF and Go1 ONNX policy
 and gives `m20-dan-nav-sim` a Go1-specific MLS envelope through
-`config/mujoco_sim.json`:
+`config/mujoco_sim.yaml`:
 
 ```text
 robot_height     = 0.50 m
@@ -253,6 +254,6 @@ This example describes the ownership boundary, not a required API shape.
 - `dimos/core/coordination/module_coordinator.py`
 - `dimos/robot/deeprobotics/m20/nav/m20_dan_nav.py`
 - `dimos/robot/deeprobotics/m20/nav/m20_true_simple_nav.py`
-- `dimos/robot/deeprobotics/m20/config/mujoco_sim.json`
+- `dimos/robot/deeprobotics/m20/config/mujoco_sim.yaml`
 - `dimos/navigation/nav_3d/mls_planner/mls_planner_native.py`
 - `dimos/navigation/nav_3d/mls_planner/rust/src/mls_planner.rs`

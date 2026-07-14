@@ -23,11 +23,12 @@ Simulation sensor settings and the Go1 MLS planning envelope are validated
 module parameters. The checked-in default profile is:
 
 ```text
-dimos/robot/deeprobotics/m20/config/mujoco_sim.json
+dimos/robot/deeprobotics/m20/config/mujoco_sim.yaml
 ```
 
 Edit that file and restart `m20-dan-nav-sim`; opening Python source is not
-required. The blueprint loads and validates the JSON at startup.
+required. The blueprint loads and validates the YAML at startup. Inline
+comments in that file document every checked-in parameter.
 
 | Parameter | Default | Effect |
 | --- | --- | --- |
@@ -61,8 +62,9 @@ itself, and MLS then inflates those points into an obstacle around its own
 start pose. Keep `publish_rear_image=false` unless duplicate front data is
 intentionally required.
 
-An alternate complete config can be selected with `--config`, and one-off
-values can be overridden without editing the file:
+The checked-in default profile uses YAML so it can carry comments. An alternate
+runtime config selected with `--config` still uses the DimOS JSON config format,
+and one-off values can be overridden without editing either file:
 
 ```bash
 dimos run m20-dan-nav-sim --config /path/to/custom.json

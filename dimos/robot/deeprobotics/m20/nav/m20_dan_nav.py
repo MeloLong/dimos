@@ -20,9 +20,10 @@ DimOS as ``slam_aligned_points`` and ``slam_odom``. It does not subscribe to the
 front/rear raw lidar topics directly.
 """
 
-import json
 from pathlib import Path
 from typing import Any
+
+import yaml
 
 from dimos.core.coordination.blueprints import Blueprint, autoconnect
 from dimos.mapping.ray_tracing.module import RayTracingVoxelMap
@@ -61,11 +62,11 @@ m20_rotation_diameter = 1.2
 m20_safe_radius_margin = 0.1
 map_save_dir = Path(__file__).resolve().parent / "map_save"
 map_save_path = map_save_dir / "m20_accumulated_map.pcd"
-M20_MUJOCO_SIM_CONFIG_PATH = Path(__file__).resolve().parents[1] / "config/mujoco_sim.json"
+M20_MUJOCO_SIM_CONFIG_PATH = Path(__file__).resolve().parents[1] / "config/mujoco_sim.yaml"
 
 
 def _load_m20_mujoco_sim_config() -> tuple[dict[str, Any], dict[str, Any]]:
-    payload = json.loads(M20_MUJOCO_SIM_CONFIG_PATH.read_text(encoding="utf-8"))
+    payload = yaml.safe_load(M20_MUJOCO_SIM_CONFIG_PATH.read_text(encoding="utf-8"))
     connection_values = payload["m20mujocosimconnection"]
     planner_values = payload["mlsplannernative"]
     connection_config = M20MujocoSimConfig.model_validate(connection_values)

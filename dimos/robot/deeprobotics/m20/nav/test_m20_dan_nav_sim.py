@@ -2,6 +2,7 @@ import json
 
 from pydantic import ValidationError
 import pytest
+import yaml
 
 from dimos.navigation.nav_3d.mls_planner.mls_planner_native import (
     MLSPlannerNative,
@@ -102,8 +103,8 @@ def test_m20_navigation_sim_uses_lightweight_sensor_profile() -> None:
     assert atom.kwargs["pointcloud_geom_groups"] == (0, 1)
 
 
-def test_m20_navigation_sim_loads_sensor_profile_from_json() -> None:
-    payload = json.loads(M20_MUJOCO_SIM_CONFIG_PATH.read_text(encoding="utf-8"))
+def test_m20_navigation_sim_loads_sensor_profile_from_yaml() -> None:
+    payload = yaml.safe_load(M20_MUJOCO_SIM_CONFIG_PATH.read_text(encoding="utf-8"))
     values = payload["m20mujocosimconnection"]
     expected = M20MujocoSimConfig.model_validate(values).model_dump(include=set(values))
     atom = next(
@@ -113,8 +114,8 @@ def test_m20_navigation_sim_loads_sensor_profile_from_json() -> None:
     assert atom.kwargs == expected
 
 
-def test_m20_navigation_sim_loads_planner_profile_from_json() -> None:
-    payload = json.loads(M20_MUJOCO_SIM_CONFIG_PATH.read_text(encoding="utf-8"))
+def test_m20_navigation_sim_loads_planner_profile_from_yaml() -> None:
+    payload = yaml.safe_load(M20_MUJOCO_SIM_CONFIG_PATH.read_text(encoding="utf-8"))
     values = payload["mlsplannernative"]
     expected = MLSPlannerNativeConfig.model_validate(values).model_dump(include=set(values))
     atom = next(atom for atom in m20_dan_nav_sim.blueprints if atom.module is MLSPlannerNative)

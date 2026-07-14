@@ -1,0 +1,61 @@
+# Default profile for `dimos --rerun-open none run m20-dan-nav-sim`.
+# Values are validated at blueprint import. Restart DimOS after editing this file.
+
+m20mujocosimconnection:
+  # Master switch for the RGB renderer. Keep enabled when publishing either image topic.
+  enable_color: true
+
+  # MuJoCo camera used to render the RGB image.
+  color_camera_name: head_camera
+
+  # Frame ID attached to published RGB camera metadata.
+  color_frame_id: camera_optical
+
+  # Horizontal pixel count shared by RGB and depth renderers.
+  width: 640
+
+  # Vertical pixel count shared by RGB and depth renderers.
+  height: 360
+
+  # RGB publication rate in frames per second. Point clouds use pointcloud_fps instead.
+  fps: 10.0
+
+  # Vertical field of view of the RGB camera, in degrees.
+  color_fov_deg: 45.0
+
+  # Publish RGB frames on the front color_image topic.
+  publish_front_image: true
+
+  # Publish the same RGB renderer on color_image_rear. Keep false because this model has no rear RGB camera.
+  publish_rear_image: false
+
+  # Master switch for depth rendering and synthetic point-cloud generation.
+  enable_pointcloud: true
+
+  # Synthetic point-cloud publication rate in frames per second.
+  pointcloud_fps: 2.0
+
+  # MuJoCo depth cameras combined into one robot-centric point cloud.
+  pointcloud_camera_names:
+    - lidar_front_camera # Forward-facing depth camera.
+    - lidar_left_camera  # Left-facing depth camera.
+    - lidar_right_camera # Right-facing depth camera.
+
+  # MuJoCo geometry groups visible to depth cameras. Groups 2 and 3 are excluded to avoid scanning the robot itself.
+  pointcloud_geom_groups:
+    - 0
+    - 1
+
+  # Vertical field of view for every synthetic depth camera, in degrees.
+  pointcloud_fov_deg: 160.0
+
+  # Open3D voxel size used to downsample the merged point cloud, in metres.
+  pointcloud_voxel_size: 0.05
+
+mlsplannernative:
+  # Vertical planning envelope, in metres. Includes margin above the nominal 0.373 m Go1 visual height.
+  robot_height: 0.5
+
+  # Hard radial clearance from the robot centre to walls and map edges, in metres.
+  # Includes margin beyond the nominal 0.399 m maximum horizontal Go1 radius.
+  wall_clearance_m: 0.45
