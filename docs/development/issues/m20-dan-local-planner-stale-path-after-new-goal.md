@@ -197,3 +197,144 @@ interactive operation.
 - `dimos/navigation/dannav/holonomic_tc/module.py`
 - `dimos/robot/deeprobotics/m20/nav/m20_dan_nav.py`
 - `logs/20260714-103638-m20-dan-nav-sim/main.jsonl`
+
+## Execution Plan
+
+The four problems must be addressed separately. Functional motion correctness
+comes before visualization polish. Do not use the real robot for repeated-goal
+validation until steps 1 and 2 have passed their tests.
+
+### Step 1: Add the Regression Tests First
+
+Extend
+`dimos/navigation/dannav/local_planner/test_dan_local_planner.py` before
+changing the gate implementation.
+
+Required cases:
+
+1. A fresh goal with a matching path commits once and consumes the armed goal.
+2. A fresh goal with a stale path is suppressed while the lock is held.
+3. A fresh goal with a stale path is also suppressed after `lock_replan` is
+   released.
+4. A fresh goal at cold start cannot accept a non-matching path.
+5. An empty path is still forwarded immediately and resets the committed path.
+6. Cancellation, cold start, and normal lock-based replanning retain their
+   existing behavior.
+
+The released-lock test is the key regression test. It must fail against the
+current implementation and pass after the gate fix.
+
+### Step 2: Fix DanLocalPlanner Goal Gating
+
+Update
+`dimos/navigation/dannav/local_planner/module.py` so the decision order is:
+
+```text
+empty path
+  -> forward immediately and stop
+pending fresh goal
+  -> matching endpoint: commit and disarm
+  -> non-matching endpoint: suppress
+no pending goal + no committed path
+  -> cold-start commit
+no pending goal + lock released
+  -> commit replan
+otherwise
+  -> suppress
+```
+
+The lock-release branch must never override a pending goal-match requirement.
+Run the local-planner unit tests and the focused M20 navigation tests after
+this change.
+
+Suggested commit boundary:
+
+```text
+test(m20): cover stale path after released replan lock
+fix(m20): reject stale path while new goal is pending
+```
+
+### Step 3: Add a Controller-Side Consistency Guard
+
+Update `dimos/navigation/dannav/holonomic_tc/module.py` after Step 2 is stable.
+The controller currently receives a path without the identity of the goal that
+created it. Add a short-term guard by providing the current goal to the
+controller and rejecting a path whose endpoint is outside the configured goal
+tolerance. Rejected or invalid paths must publish zero velocity.
+
+The longer-term contract should carry a goal revision or goal ID with the path
+so that planners and controllers can distinguish a new plan from an old
+in-flight message. Validate this contract with tests for matching and stale
+revisions.
+
+Suggested commit boundary:
+
+```text
+fix(m20): add goal consistency guard to tracking controller
+```
+
+### Step 4: Make Active and Historical Rerun Paths Distinct
+
+Update `dimos/robot/deeprobotics/m20/nav/m20_dan_nav.py` after motion behavior
+is correct.
+
+- Clear the active route when an empty or invalid path is received.
+- Keep historical routes in a separate, explicitly historical entity if review
+  is needed.
+- Publish a visible active-path status such as `active`, `replanning`,
+  `stopped`, or `invalid`.
+- Verify that a stopped planner does not leave an old route looking active in
+  Rerun.
+
+This step must not change the planner or controller's motion decision.
+
+Suggested commit boundary:
+
+```text
+fix(m20): clear inactive route from rerun viewer
+```
+
+### Step 5: Add Runtime Diagnostics and End-to-End Verification
+
+Add structured logs around path commit decisions. Each decision should expose:
+
+```text
+goal_revision or goal_position
+candidate_path_endpoint
+accepted
+commit_reason: cold_start / fresh_goal / lock_release / empty_stop
+```
+
+Then repeat the simulation scenario:
+
+1. Send goal A and verify the committed endpoint matches A.
+2. Move the robot to the table edge or underneath it.
+3. Send goal B and verify that old paths are suppressed until a path ending at
+   B arrives.
+4. Verify that the controller either reaches B or stops with an explicit
+   failure state; it must not silently follow A's path.
+5. Send goal C after arrival and repeat the same checks.
+6. Confirm the Rerun active route and logs agree with the latest goal.
+
+Record the run log path, goal coordinates, path endpoints, arrival status, and
+any stop reason in the test report. Do not treat a visible green line alone as
+evidence of a valid current plan.
+
+Suggested final documentation boundary:
+
+```text
+docs(m20): record goal replacement verification
+```
+
+## Completion Gate
+
+This issue is complete only when all of the following are true:
+
+- stale paths are rejected during and after a released replan lock;
+- cold-start and empty-path safety behavior remains correct;
+- the tracking controller has a goal/path consistency guard or an equivalent
+  versioned path contract;
+- Rerun clearly distinguishes an active path from historical or stopped paths;
+- focused unit tests pass;
+- the repeated-goal MuJoCo scenario passes with structured logs;
+- the final commits are pushed to the active development branch.
