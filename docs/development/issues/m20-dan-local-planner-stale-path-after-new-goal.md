@@ -326,6 +326,86 @@ Suggested final documentation boundary:
 docs(m20): record goal replacement verification
 ```
 
+## VM Reproduction Results
+
+### Test Environment
+
+- Host: Ubuntu VM `autoware-1.8.0-vm`
+- Branch: `codex/wd-m20-mujoco-sim`
+- Blueprint: `dimos --rerun-open none run m20-dan-nav-sim`
+- MLS simulation envelope: `robot_height=0.5`,
+  `wall_clearance_m=0.45`
+- Transport under test: real LCM topics in the running DimOS process
+- Test date: 2026-07-14
+
+### Result A: Normal Repeated-Goal Simulation
+
+Three goals were sent through the normal `/clicked_point` interface. Every
+goal produced a path ending at the requested point and every goal generated a
+`goal_reached` event:
+
+```text
+A: (-0.750, 2.870) -> reached after 27.504 s
+B: (-2.400, 1.400) -> reached after 22.784 s
+C: ( 0.500, 1.000) -> reached after 30.927 s
+```
+
+This scenario did not naturally reproduce an active stale path. The current
+MuJoCo scene and MLS timing normally produce a valid new path quickly enough
+for the matching path to win the race.
+
+### Result B: Stable Gate-Level Reproduction
+
+The current `_ReplanGate` was driven directly with a released lock, a new goal,
+and a stale path ending at the previous goal. The result was:
+
+```text
+new goal      = [9.0, 0.0]
+stale endpoint = [5.0, 0.0]
+forwarded      = True
+armed goal     = [9.0, 0.0]
+```
+
+This is a stable, deterministic reproduction of Problem 1. It does not depend
+on MuJoCo timing and proves that the gate can forward a path that does not
+match the pending goal after `lock_replan` has been released.
+
+### Result C: LCM Fault-Injection Race
+
+Using the real running MuJoCo process, a new goal B was sent and a stale path
+ending at old goal C was injected onto `/planner_path`. The observed order was:
+
+```text
+GOAL_B
+stale planner path endpoint = (0.500, 1.000)
+new planner path endpoint    = (-2.400, 1.400)
+active path endpoint         = (-2.400, 1.400)
+```
+
+The stale and valid paths were observed interleaved on the real transport. In
+this run, the valid MLS path arrived a few milliseconds later and became the
+active path before the stale path was visible downstream. Therefore the full
+motion failure was not forced by this particular timing, but the race window
+is observable in the actual simulation chain.
+
+### Reproduction Status By Problem
+
+| No. | Problem | Current evidence | Status |
+| --- | --- | --- | --- |
+| 1 | Stale path committed after a new goal | Deterministic `_ReplanGate` reproduction with `forwarded=True` | **Stable reproduction** |
+| 2 | No controller-side goal/path consistency guard | Confirmed by module contract; no goal revision reaches `DanHolonomicTC` | **Design defect confirmed; dynamic motion failure not forced in this run** |
+| 3 | Rerun retains an old path after empty/invalid output | Confirmed by `_render_path` returning `None` for empty paths | **Implementation behavior confirmed; visual failure not separately captured here** |
+| 4 | Logs/tests omit the failure boundary | Production log lacks goal identity, path endpoint, and commit reason; existing tests pass without released-lock coverage | **Stable verification gap** |
+
+### Decision From This Test
+
+The evidence is sufficient to justify the Step 1 regression test and the
+minimal Step 2 gate fix. It is not evidence that a full navigation architecture
+upgrade is immediately required. A full MuJoCo end-to-end stale-motion
+demonstration should be added as an acceptance test by making the planner/path
+arrival ordering deterministic, rather than relying on a naturally occurring
+race.
+
 ## Completion Gate
 
 This issue is complete only when all of the following are true:
