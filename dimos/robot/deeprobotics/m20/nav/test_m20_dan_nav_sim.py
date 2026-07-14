@@ -3,6 +3,10 @@ import json
 from pydantic import ValidationError
 import pytest
 
+from dimos.navigation.nav_3d.mls_planner.mls_planner_native import (
+    MLSPlannerNative,
+    MLSPlannerNativeConfig,
+)
 from dimos.robot.cli.dimos import load_config_args
 from dimos.robot.deeprobotics.m20.connection import M20Connection
 from dimos.robot.deeprobotics.m20.mujoco_sim import (
@@ -36,6 +40,19 @@ def test_sim_outputs_feed_wd_slam_topics() -> None:
         m20_dan_nav_sim.remapping_map[(M20MujocoSimConnection, "slam_aligned_points")]
         == "dimos/slam_aligned_points"
     )
+
+
+def test_real_and_sim_mls_envelopes_are_isolated() -> None:
+    real_planner = next(atom for atom in m20_dan_nav.blueprints if atom.module is MLSPlannerNative)
+    sim_planner = next(
+        atom for atom in m20_dan_nav_sim.blueprints if atom.module is MLSPlannerNative
+    )
+
+    assert real_planner.kwargs["robot_height"] == 1.0
+    assert real_planner.kwargs["wall_clearance_m"] == 0.55
+    assert sim_planner.kwargs["robot_height"] == 0.5
+    assert sim_planner.kwargs["wall_clearance_m"] == 0.45
+    assert m20_dan_nav_sim.global_config_overrides["robot_model"] == "unitree_go1"
 
 
 def test_rear_image_is_not_published_by_default() -> None:
@@ -94,6 +111,15 @@ def test_m20_navigation_sim_loads_sensor_profile_from_json() -> None:
     )
 
     assert atom.kwargs == expected
+
+
+def test_m20_navigation_sim_loads_planner_profile_from_json() -> None:
+    payload = json.loads(M20_MUJOCO_SIM_CONFIG_PATH.read_text(encoding="utf-8"))
+    values = payload["mlsplannernative"]
+    expected = MLSPlannerNativeConfig.model_validate(values).model_dump(include=set(values))
+    atom = next(atom for atom in m20_dan_nav_sim.blueprints if atom.module is MLSPlannerNative)
+
+    assert {key: atom.kwargs[key] for key in values} == expected
 
 
 def test_partial_cli_config_keeps_checked_in_sensor_defaults(tmp_path) -> None:

@@ -15,12 +15,12 @@ The simulator publishes M20-compatible `slam_odom` and `slam_aligned_points`
 topics and consumes `cmd_vel`. The front RGB stream is enabled for simulation
 inspection, while the rear image topic remains disabled because the legacy
 simulator has no rear camera and would only duplicate the front frame. The
-simulator still uses the existing Unitree Go1/Go2 model and policy as a
+simulator uses the existing Unitree Go1 model and Go1 ONNX policy as a
 navigation data source. It does not validate DeepRobotics M20 dynamics,
 actuators, gait control, or physical limits.
 
-Sensor settings are validated `ModuleConfig` parameters on
-`M20MujocoSimConnection`. The checked-in default profile is:
+Simulation sensor settings and the Go1 MLS planning envelope are validated
+module parameters. The checked-in default profile is:
 
 ```text
 dimos/robot/deeprobotics/m20/config/mujoco_sim.json
@@ -41,6 +41,18 @@ required. The blueprint loads and validates the JSON at startup.
 | `pointcloud_geom_groups` | `[0, 1]` | MuJoCo geometry groups visible to point-cloud cameras |
 | `pointcloud_fov_deg` | `160` | Depth projection field of view |
 | `pointcloud_voxel_size` | `0.05` | Open3D downsampling resolution in metres |
+
+The `mlsplannernative` section keeps the planner envelope consistent with the
+actual Go1 MJCF used by this simulation:
+
+| Parameter | Value | Basis |
+| --- | --- | --- |
+| `robot_height` | `0.50 m` | Go1 visual height is about 0.373 m in the nominal standing pose, plus vertical margin |
+| `wall_clearance_m` | `0.45 m` | Go1 maximum nominal horizontal radius is about 0.399 m, plus lateral margin |
+
+The real `m20-dan-nav` blueprint continues to use its separate M20 envelope
+(`1.00 m` height and `0.55 m` hard wall clearance). The remaining mapping,
+planner cost, and controller parameters are intentionally shared for now.
 
 The generic defaults preserve the legacy G1/Go2 visible groups `(0, 1, 2)`.
 The M20 profile limits point-cloud rendering to groups `(0, 1)` because the
