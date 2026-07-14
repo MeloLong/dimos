@@ -17,7 +17,6 @@ from __future__ import annotations
 from collections.abc import Iterable
 from datetime import datetime, timezone
 import inspect
-import json
 import os
 from pathlib import Path
 import sys
@@ -43,6 +42,7 @@ from dimos.mapping.utils.cli.rename import main as _map_rename_main
 from dimos.mapping.utils.cli.replay import main as _map_replay_main
 from dimos.mapping.utils.cli.replay_marker import main as _map_replay_marker_main
 from dimos.robot.unitree.go2.cli.go2tool import app as go2tool_app
+from dimos.utils.config import load_config_mapping
 from dimos.utils.logging_config import setup_logger
 from dimos.visualization.rerun.constants import RerunOpenOption
 
@@ -266,10 +266,7 @@ def _get_default_value(defaults: object, key: str, fallback: Any) -> Any:
 
 
 def load_config_args(config: type[BaseModel], args: Iterable[str], path: Path) -> dict[str, Any]:
-    try:
-        kwargs = json.loads(path.read_text())
-    except (OSError, json.JSONDecodeError):
-        kwargs = {}
+    kwargs = load_config_mapping(path, missing_ok=True)
 
     for k, v in os.environ.items():
         parts = k.lower().split("__")
