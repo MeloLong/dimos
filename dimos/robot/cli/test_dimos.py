@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from pathlib import Path
 import sys
 from typing import Literal
 
@@ -20,7 +21,7 @@ import pytest
 
 from dimos.core.coordination.blueprints import autoconnect
 from dimos.core.module import Module, ModuleConfig
-from dimos.robot.cli.dimos import _normalize_simulation_argv, arg_help, main
+from dimos.robot.cli.dimos import _normalize_simulation_argv, arg_help, load_config_args, main
 import dimos.utils.cli.spy.run_spy as run_spy
 
 
@@ -147,6 +148,30 @@ def test_blueprint_arg_help_required():
         "      * testmodule.spam: str (default: eggs)",
         "",
     ]
+
+
+@pytest.mark.parametrize(
+    ("filename", "contents"),
+    [
+        ("config.yaml", "m20-connection:\n  host_ip: 192.168.1.100 # YAML comment\n"),
+        ("config.json", '{"m20-connection": {"host_ip": "192.168.1.100"}}'),
+    ],
+)
+def test_load_config_args_supports_yaml_and_json(
+    tmp_path: Path, filename: str, contents: str
+) -> None:
+    class ConnectionConfig(BaseModel):
+        host_ip: str
+
+    class Config(BaseModel):
+        m20_connection: ConnectionConfig = Field(alias="m20-connection")
+
+    config_path = tmp_path / filename
+    config_path.write_text(contents)
+
+    assert load_config_args(Config, (), config_path) == {
+        "m20-connection": {"host_ip": "192.168.1.100"}
+    }
 
 
 @pytest.fixture

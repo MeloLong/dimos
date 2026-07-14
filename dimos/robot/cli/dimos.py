@@ -17,7 +17,6 @@ from __future__ import annotations
 from collections.abc import Iterable
 from datetime import datetime, timezone
 import inspect
-import json
 import os
 from pathlib import Path
 import sys
@@ -32,6 +31,7 @@ from pydantic.fields import FieldInfo
 from pydantic_core import PydanticUndefined
 import requests
 import typer
+import yaml
 
 from dimos.agents.mcp.mcp_adapter import McpAdapter, McpError
 from dimos.constants import CONFIG_DIR, LOG_DIR
@@ -265,8 +265,8 @@ def _get_default_value(defaults: object, key: str, fallback: Any) -> Any:
 
 def load_config_args(config: type[BaseModel], args: Iterable[str], path: Path) -> dict[str, Any]:
     try:
-        kwargs = json.loads(path.read_text())
-    except (OSError, json.JSONDecodeError):
+        kwargs = yaml.safe_load(path.read_text()) or {}
+    except (OSError, yaml.YAMLError):
         kwargs = {}
 
     for k, v in os.environ.items():
@@ -301,7 +301,10 @@ def run(
     disable: list[str] = typer.Option([], "--disable", help="Module names to disable"),
     blueprint_args: list[str] = typer.Option((), "--option", "-o"),
     config_path: Path = typer.Option(
-        CONFIG_DIR / "dimos", "--config", "-c", help="Path to config file"
+        CONFIG_DIR / "dimos",
+        "--config",
+        "-c",
+        help="YAML or JSON config file (YAML supports comments)",
     ),
     show_help: bool = typer.Option(False, "--help"),
 ) -> None:
