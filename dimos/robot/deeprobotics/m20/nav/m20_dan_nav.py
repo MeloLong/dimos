@@ -36,6 +36,8 @@ from dimos.robot.deeprobotics.m20.blueprints.basic import (
 )
 from dimos.robot.deeprobotics.m20.connection import M20Connection
 from dimos.robot.deeprobotics.m20.nav.fixed_forward_path_planner import FixedForwardPathPlanner
+
+# from dimos.navigation.nav_3d.mls_planner.mls_planner_native import MLSPlannerNative
 from dimos.robot.deeprobotics.m20.nav.odom2posestamped import OdomToPoseStamped
 from dimos.robot.deeprobotics.m20.tf import M20TF
 from dimos.visualization.vis_module import vis_module
@@ -143,6 +145,23 @@ m20_dan_nav = autoconnect(
             (FixedForwardPathPlanner, "global_map", "global_map_unused"),
         ]
     ),
+    # MLSPlannerNative.blueprint(
+    #     world_frame="map",
+    #     voxel_size=voxel_size,
+    #     robot_height=1.2,
+    #     wall_clearance_m=0.2,
+    #     wall_buffer_m=0.75,
+    #     wall_buffer_weight=100.0,
+    #     step_threshold_m=0.16,
+    #     step_penalty_weight=1.0,
+    #     viz_publish_hz=0.0,
+    # ).remappings(
+    #     [
+    #         (MLSPlannerNative, "path", "planner_path"),
+    #         # Use the incremental local_map + region_bounds pair from ray tracing.
+    #         (MLSPlannerNative, "global_map", "global_map_unused"),
+    #     ]
+    # ),
     OdomToPoseStamped.blueprint().remappings(
         [
             (OdomToPoseStamped, "odometry", "dimos/slam_odom"),
