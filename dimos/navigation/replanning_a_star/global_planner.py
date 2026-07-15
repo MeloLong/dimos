@@ -63,6 +63,8 @@ class GlobalPlanner(Resource):
     _replan_reason: StopMessage | None
     _lock: RLock
     _safe_goal_clearance: float
+    _path_length_weight: float
+    _path_cell_cost_weight: float
 
     _safe_goal_tolerance: float = 4.0
     _goal_tolerance: float = 0.2
@@ -73,11 +75,19 @@ class GlobalPlanner(Resource):
     _max_path_deviation: float = 0.9
     _replanning_enabled: bool = True
 
-    def __init__(self, global_config: GlobalConfig) -> None:
+    def __init__(
+        self,
+        global_config: GlobalConfig,
+        *,
+        path_length_weight: float = 1.0,
+        path_cell_cost_weight: float = 3.0,
+    ) -> None:
         self.path = Subject()
         self.goal_reached = Subject()
 
         self._global_config = global_config
+        self._path_length_weight = path_length_weight
+        self._path_cell_cost_weight = path_cell_cost_weight
         self._navigation_map = NavigationMap(self._global_config, "voronoi")
         self._navigation_map_near = NavigationMap(self._global_config, "gradient")
         self._local_planner = LocalPlanner(
@@ -353,7 +363,13 @@ class GlobalPlanner(Resource):
             distance = robot_pos.distance(goal)
             navigation_map = self._navigation_map if distance > 1.5 else self._navigation_map_near
             costmap = navigation_map.make_gradient_costmap(size)
-            path = min_cost_astar(costmap, goal, robot_pos)
+            path = min_cost_astar(
+                costmap,
+                goal,
+                robot_pos,
+                distance_weight=self._path_length_weight,
+                cell_cost_weight=self._path_cell_cost_weight,
+            )
             if path and path.poses:
                 logger.info(f"Found path {size}x robot width.")
                 return path
