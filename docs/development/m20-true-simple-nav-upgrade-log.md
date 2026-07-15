@@ -104,6 +104,24 @@ the last 8 seconds, not distance advanced along the intended path. A robot
 rotating in place, moving slowly, or oscillating in a small area can therefore
 look stuck even if it is executing valid control behavior.
 
+### Stuck-Replan Diagnostic Record
+
+The stuck log now emits one structured record immediately before each recovery
+replan. It contains:
+
+- `path_progress_m`, `path_length_m`, `path_remaining_m`, and direct
+  `goal_distance_m` projected from current odometry;
+- latest published `cmd_linear_x_m_s`, `cmd_linear_y_m_s`, and
+  `cmd_angular_z_rad_s`;
+- odometry position/yaw and LocalPlanner state;
+- `obstacle_ahead` from the local 3 m lethal-obstacle check; and
+- the stuck window, threshold, sample count, centroid, and maximum position
+  spread used by PositionTracker.
+
+This is diagnostic instrumentation only. It does not alter replan thresholds
+or controller behavior. A restarted process is required for the new fields to
+appear in logs.
+
 ## What A "Replan" Replaces
 
 The current stack does not maintain a separate global route plus a local
@@ -201,6 +219,38 @@ algorithmic failure and insufficient perception.
 
 **Trade-off:** requires selecting platform- and sensor-specific thresholds and
 may reduce reachable area in sparse maps.
+
+#### Strategy 1: Safe Navigation (Recommended Default)
+
+Use this for routine navigation, testing near people, and any repeatable route
+where exploration is not the goal. Unknown is treated as non-traversable:
+
+- A* does not cross unknown cells.
+- Goals must resolve to an observed safe cell.
+- Local clearance stops if unknown enters the imminent path footprint.
+- The robot waits for perception/map updates or asks for a new known-safe goal.
+
+This sacrifices reachability in sparse maps for an unambiguous safety rule. It
+is the most suitable default for the current platform because local clearance
+otherwise permits unobserved terrain.
+
+#### Strategy 2: Cautious Exploration
+
+Use this only when mapping/exploration is explicitly requested. Unknown stays
+traversable at a high global cost, but the permission is bounded:
+
+- Only frontier goals or an explicitly marked exploration goal may enter an
+  unknown corridor.
+- Unknown traversal uses a reduced speed and a short forward horizon.
+- The robot stops when fresh perception does not convert the approaching
+  unknown footprint into observed free space before the horizon is consumed.
+- The log records mode, unknown-path length, map age, and the stop reason.
+
+This lets a robot expand a map without pretending unknown is free. It requires
+a dedicated exploration-mode contract and tests before real-robot use.
+
+Do not use a moving `initial_safe_radius_meters` disc as either strategy. It
+would erase evidence instead of deciding how to handle uncertainty.
 
 ### F. Separate Global Route From Local Trajectory Recovery
 

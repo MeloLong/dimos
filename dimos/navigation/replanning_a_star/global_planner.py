@@ -263,7 +263,12 @@ class GlobalPlanner(Resource):
                 time.perf_counter() - last_stuck_check > self._stuck_time_window
                 and self._position_tracker.is_stuck()
             ):
-                logger.info("Robot is stuck. Replanning.")
+                logger.info(
+                    "Robot is stuck. Replanning.",
+                    replan_attempt=self._replan_limiter.get_attempt(),
+                    **self._local_planner.get_stuck_diagnostics(),
+                    **self._position_tracker.get_stuck_diagnostics(),
+                )
                 self._replan_path()
                 last_stuck_check = time.perf_counter()
 
