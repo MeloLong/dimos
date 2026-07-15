@@ -34,12 +34,30 @@ from dimos.navigation.replanning_a_star.goal_validator import find_safe_goal
 from dimos.navigation.replanning_a_star.local_planner import LocalPlanner, StopMessage
 from dimos.navigation.replanning_a_star.min_cost_astar import min_cost_astar
 from dimos.navigation.replanning_a_star.navigation_map import NavigationMap
-from dimos.navigation.replanning_a_star.position_tracker import PositionTracker
 from dimos.navigation.replanning_a_star.replan_limiter import ReplanLimiter
 from dimos.utils.logging_config import setup_logger
 from dimos.utils.trigonometry import angle_diff
 
 logger = setup_logger()
+
+
+def _has_stuck_path_progress(
+    *,
+    elapsed_s: float,
+    path_progress_delta_m: float,
+    command_linear_x_m_s: float,
+    goal_distance_m: float,
+    window_s: float,
+    min_path_progress_m: float,
+    min_command_linear_m_s: float,
+    goal_exclusion_m: float,
+) -> bool:
+    return (
+        elapsed_s >= window_s
+        and path_progress_delta_m < min_path_progress_m
+        and command_linear_x_m_s > min_command_linear_m_s
+        and goal_distance_m > goal_exclusion_m
+    )
 
 
 class GlobalPlanner(Resource):
@@ -55,7 +73,6 @@ class GlobalPlanner(Resource):
     _navigation_map: NavigationMap
     _navigation_map_near: NavigationMap
     _local_planner: LocalPlanner
-    _position_tracker: PositionTracker
     _replan_limiter: ReplanLimiter
     _disposables: CompositeDisposable
     _stop_planner: Event
@@ -71,7 +88,8 @@ class GlobalPlanner(Resource):
     _rotation_tolerance: float = math.radians(15)
     _replan_goal_tolerance: float = 0.5
     _stuck_time_window: float = 8.0
-    _stuck_threshold: float = 0.4
+    _stuck_min_path_progress: float = 0.2
+    _stuck_min_command_linear: float = 0.1
     _max_path_deviation: float = 0.9
     _replanning_enabled: bool = True
 
@@ -94,11 +112,6 @@ class GlobalPlanner(Resource):
             self._global_config, self._navigation_map, self._goal_tolerance
         )
 
-        stuck_threshold = self._stuck_threshold
-        if global_config.simulation:
-            stuck_threshold = 1.0
-
-        self._position_tracker = PositionTracker(self._stuck_time_window, stuck_threshold)
         self._replan_limiter = ReplanLimiter()
         self._disposables = CompositeDisposable()
         self._stop_planner = Event()
@@ -134,7 +147,6 @@ class GlobalPlanner(Resource):
             self._current_odom = msg
 
         self._local_planner.handle_odom(msg)
-        self._position_tracker.add_position(msg)
 
     def handle_global_costmap(self, msg: OccupancyGrid) -> None:
         self._navigation_map.update(msg)
@@ -165,8 +177,6 @@ class GlobalPlanner(Resource):
         logger.info("Cancelling goal.", but_will_try_again=but_will_try_again, arrived=arrived)
 
         with self._lock:
-            self._position_tracker.reset_data()
-
             if not but_will_try_again:
                 self._current_goal = None
                 self._goal_reached = arrived
@@ -201,7 +211,9 @@ class GlobalPlanner(Resource):
         """Monitor if the robot is stuck, veers off track, or stopped navigating."""
 
         last_id = -1
-        last_stuck_check = time.perf_counter()
+        last_progress_m: float | None = None
+        max_progress_m: float | None = None
+        last_progress_time = time.perf_counter()
 
         while not self._stop_planner.is_set():
             # Wait for either timeout or replan signal from local planner.
@@ -219,7 +231,6 @@ class GlobalPlanner(Resource):
 
                 if reason is not None:
                     self._handle_stop_message(reason)
-                    last_stuck_check = time.perf_counter()
                     continue
 
             with self._lock:
@@ -249,28 +260,56 @@ class GlobalPlanner(Resource):
                     threshold=self._max_path_deviation,
                 )
                 self._replan_path()
-                last_stuck_check = time.perf_counter()
                 continue
 
-            _, new_id = self._local_planner.get_unique_state()
+            local_state, new_id = self._local_planner.get_unique_state()
 
             if new_id != last_id:
                 last_id = new_id
-                last_stuck_check = time.perf_counter()
+                last_progress_m = None
+                max_progress_m = None
+                last_progress_time = time.perf_counter()
                 continue
 
-            if (
-                time.perf_counter() - last_stuck_check > self._stuck_time_window
-                and self._position_tracker.is_stuck()
+            if local_state != "path_following":
+                continue
+
+            path_progress_m = self._local_planner.get_path_progress_m()
+            if path_progress_m is None:
+                continue
+
+            now = time.perf_counter()
+            if max_progress_m is None:
+                max_progress_m = path_progress_m
+                last_progress_m = path_progress_m
+                last_progress_time = now
+                continue
+
+            max_progress_m = max(max_progress_m, path_progress_m)
+            assert last_progress_m is not None
+            progress_delta_m = max_progress_m - last_progress_m
+            if progress_delta_m >= self._stuck_min_path_progress:
+                last_progress_m = max_progress_m
+                last_progress_time = now
+                continue
+
+            if _has_stuck_path_progress(
+                elapsed_s=now - last_progress_time,
+                path_progress_delta_m=progress_delta_m,
+                command_linear_x_m_s=self._local_planner.get_last_command_linear_x_m_s(),
+                goal_distance_m=current_goal.position.distance(current_odom.position),
+                window_s=self._stuck_time_window,
+                min_path_progress_m=self._stuck_min_path_progress,
+                min_command_linear_m_s=self._stuck_min_command_linear,
+                goal_exclusion_m=self._replan_goal_tolerance,
             ):
                 logger.info(
                     "Robot is stuck. Replanning.",
                     replan_attempt=self._replan_limiter.get_attempt(),
+                    path_progress_delta_m=round(progress_delta_m, 3),
                     **self._local_planner.get_stuck_diagnostics(),
-                    **self._position_tracker.get_stuck_diagnostics(),
                 )
                 self._replan_path()
-                last_stuck_check = time.perf_counter()
 
     def _on_stopped_navigating(self, stop_message: StopMessage) -> None:
         with self._lock:

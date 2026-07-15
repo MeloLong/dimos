@@ -146,6 +146,22 @@ class LocalPlanner(Resource):
         with self._lock:
             return (self._state, self._state_unique_id)
 
+    def get_path_progress_m(self) -> float | None:
+        with self._lock:
+            path_distancer = self._path_distancer
+            odom = self._current_odom
+
+        if path_distancer is None or odom is None:
+            return None
+
+        current_pos = np.array([odom.position.x, odom.position.y])
+        closest_index = path_distancer.find_closest_point_index(current_pos)
+        return path_distancer.progress_at_index_m(closest_index)
+
+    def get_last_command_linear_x_m_s(self) -> float:
+        with self._lock:
+            return self._last_cmd_vel.linear.x
+
     def get_stuck_diagnostics(self) -> dict[str, object]:
         """Snapshot controller state only when GlobalPlanner reports a stuck robot."""
         with self._lock:
