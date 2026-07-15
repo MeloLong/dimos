@@ -21,14 +21,23 @@ front/rear raw lidar topics directly.
 """
 
 from pathlib import Path
+from typing import Any
+
+import yaml
 
 from dimos.core.coordination.blueprints import autoconnect
 from dimos.mapping.costmapper import CostMapper
 from dimos.mapping.pointclouds.occupancy import HeightCostConfig
 from dimos.mapping.ray_tracing.module import RayTracingVoxelMap
 from dimos.navigation.movement_manager.movement_manager import MovementManager
+from dimos.navigation.nav_3d.mls_planner.mls_planner_native import MLSPlannerNativeConfig
 from dimos.navigation.replanning_a_star.module import ReplanningAStarPlanner
-from dimos.robot.deeprobotics.m20.blueprints.basic import m20
+from dimos.robot.deeprobotics.m20.blueprints.basic import m20, rerun
+from dimos.robot.deeprobotics.m20.mujoco_sim import (
+    M20MujocoSimConfig,
+    M20MujocoSimConnection,
+)
+from dimos.robot.deeprobotics.m20.tf import M20TF
 
 voxel_size = 0.05
 m20_width_clearance = 0.45
@@ -42,6 +51,22 @@ m20_rotation_diameter = 1.2
 m20_safe_radius_margin = 0.1
 map_save_dir = Path(__file__).resolve().parent / "map_save"
 map_save_path = map_save_dir / "m20_accumulated_map.pcd"
+M20_MUJOCO_SIM_CONFIG_PATH = Path(__file__).resolve().parents[1] / "config/mujoco_sim.yaml"
+
+
+def _load_m20_mujoco_sim_config() -> tuple[dict[str, Any], dict[str, Any]]:
+    payload = yaml.safe_load(M20_MUJOCO_SIM_CONFIG_PATH.read_text(encoding="utf-8"))
+    connection_values = payload["m20mujocosimconnection"]
+    envelope_values = payload["mlsplannernative"]
+    connection_config = M20MujocoSimConfig.model_validate(connection_values)
+    envelope_config = MLSPlannerNativeConfig.model_validate(envelope_values)
+    return (
+        connection_config.model_dump(include=set(connection_values)),
+        envelope_config.model_dump(include=set(envelope_values)),
+    )
+
+
+M20_MUJOCO_SIM_CONFIG, GO1_MUJOCO_ENVELOPE = _load_m20_mujoco_sim_config()
 
 _m20_slam_ray_tracer = RayTracingVoxelMap.blueprint(
     voxel_size=voxel_size,
@@ -94,3 +119,45 @@ m20_true_simple_nav = autoconnect(
     ).remappings([(ReplanningAStarPlanner, "odometry", "dimos/slam_odom")]),
     MovementManager.blueprint(),
 ).global_config(n_workers=10, robot_model="m20")
+
+
+# The legacy MuJoCo world uses a Unitree Go1 model. Keep its planning envelope
+# separate from the M20 real-robot values above while preserving the same A*
+# planning, path smoothing, and LocalPlanner trajectory-generation chain.
+_go1_sim_clearance = GO1_MUJOCO_ENVELOPE["wall_clearance_m"]
+_go1_sim_height = GO1_MUJOCO_ENVELOPE["robot_height"]
+
+m20_true_simple_nav_sim = autoconnect(
+    rerun,
+    _m20_slam_ray_tracer,
+    CostMapper.blueprint(
+        config=HeightCostConfig(
+            resolution=voxel_size,
+            can_pass_under=_go1_sim_height,
+            can_climb=m20_max_step_height,
+            ignore_noise=0.08,
+            smoothing=1.5,
+            min_gradient_neighbors=2,
+            ignore_overhead_only=True,
+        ),
+        initial_safe_radius_meters=_go1_sim_clearance,
+    ),
+    ReplanningAStarPlanner.blueprint(
+        robot_width=_go1_sim_clearance * 2,
+        robot_rotation_diameter=_go1_sim_clearance * 2,
+    ).remappings([(ReplanningAStarPlanner, "odometry", "dimos/slam_odom")]),
+    MovementManager.blueprint(),
+    M20MujocoSimConnection.blueprint(**M20_MUJOCO_SIM_CONFIG).remappings(
+        [
+            (M20MujocoSimConnection, "slam_odom", "dimos/slam_odom"),
+            (M20MujocoSimConnection, "slam_aligned_points", "dimos/slam_aligned_points"),
+        ]
+    ),
+    M20TF.blueprint().remappings([(M20TF, "odometry", "dimos/slam_odom")]),
+).global_config(
+    n_workers=11,
+    robot_model="unitree_go1",
+    robot_width=_go1_sim_clearance * 2,
+    robot_rotation_diameter=_go1_sim_clearance * 2,
+    simulation="mujoco",
+)

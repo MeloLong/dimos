@@ -1,4 +1,34 @@
-# M20 Dan Navigation MuJoCo Test
+# M20 Navigation MuJoCo Test
+
+The Go1-backed MuJoCo adapter can exercise two M20 navigation chains without
+opening a MuJoCo window:
+
+| Blueprint | Command | Planning and tracking chain |
+| --- | --- | --- |
+| Dan navigation | `m20-dan-nav-sim` | MLSPlannerNative -> DanLocalPlanner -> DanHolonomicTC |
+| True simple navigation | `m20-true-simple-nav-sim` | CostMapper -> ReplanningAStarPlanner -> LocalPlanner/PController |
+
+## True Simple Navigation Trajectory Test
+
+Use this blueprint when testing the existing A* path generation, 0.1 m path
+smoothing/resampling, obstacle-triggered replanning, and the rotate-then-drive
+LocalPlanner. It deliberately does not include DanLocalPlanner or
+DanHolonomicTC.
+
+```bash
+cd /home/markus/work/dimos_m20
+source "$HOME/.cargo/env"
+source .venv/bin/activate
+dimos stop
+dimos --rerun-open none run m20-true-simple-nav-sim
+```
+
+The simulator publishes `dimos/slam_odom` and
+`dimos/slam_aligned_points`, while `MovementManager` routes planner
+`nav_cmd_vel` to MuJoCo through `cmd_vel`. The blueprint uses the checked-in
+Go1 envelope from `mujoco_sim.yaml`: 0.50 m height and 0.45 m radial
+clearance, resulting in a 0.90 m A* robot width and rotation diameter. It is a
+planning/control integration test, not an M20 dynamics validation.
 
 `m20-dan-nav-sim` runs the WD M20 Dan navigation stack against the existing
 DimOS MuJoCo simulator without opening a MuJoCo window.
