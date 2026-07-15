@@ -35,7 +35,7 @@ length.
 | --- | --- | --- | --- | --- |
 | P1 | Implemented | A* ranked map cost before distance. | A reproduced route was 0.354 m versus a 0.271 m direct corridor because it saved 8 raw cell-cost units. | Unnecessary winding and endpoint return hooks. |
 | P2 | Open / design decision | `initial_safe_radius_meters` is a fixed startup disc around global `(0, 0)`. | `CostMapper._apply_initial_safe_radius` computes distance from world zero, not robot odometry. | It does not clean sparse cells near the robot after movement. |
-| P3 | Open | Repeated stuck detection causes replanning. | Active simulation logs reported `Robot is stuck. Replanning.` about every 8 seconds. The simulation threshold is 1.0 m over that window. | The full remaining route is replaced frequently, making routes look unstable and complicating diagnosis. |
+| P3 | Implemented / runtime validation pending | Spatial-spread stuck detection caused false replans. | Active simulation logs showed forward commands with no obstacle, but 0.20-0.28 m coordinate spread was below the old 1.0 m simulation threshold. | The detector now requires insufficient cumulative path progress instead. |
 | P4 | Candidate | Grid path topology is passed directly to smoothing. | Smoothing made the existing raw A* terminal correction visually obvious; it did not create it. | Even a valid grid route can contain unnecessary bends. |
 | P5 | Open | Sparse map quality is not separately measured before path planning. | One inspected costmap contained about 38,808 unknown, 39,114 free, and 870 occupied cells. | Planner behavior can vary with local perception coverage rather than only geometry. |
 | P6 | Open | Unknown-cell policy differs between planning and local clearance. | A* may cross unknown at a penalty of 80, while local obstacle checking stops only for lethal cost 100. | The robot can plan through unobserved terrain without an explicit risk policy. |
@@ -88,7 +88,7 @@ With an active goal, recovery replanning has these triggers:
 | Trigger | Current condition | Result |
 | --- | --- | --- |
 | Path deviation | Distance from odometry to the published path exceeds `0.9 m`. | Full remaining route is regenerated. |
-| No progress / stuck | After 8 s without a LocalPlanner state transition, all recent odometry positions lie within the configured threshold of their centroid. The default is `0.4 m`; the MuJoCo configuration raises it to `1.0 m`. | Full remaining route is regenerated. |
+| No progress / stuck | Only in `path_following`: less than `0.2 m` of maximum cumulative path progress for 8 s, while forward command exceeds `0.1 m/s` and goal distance exceeds `0.5 m`. | Full remaining route is regenerated. |
 | Obstacle ahead | The local controller finds a lethal (`100`) cell in the next 3 m of its path footprint. | It stops, then requests a full remaining route. |
 | Local planner error | The local controller thread raises an exception. | It stops, then requests a full remaining route. |
 
@@ -99,10 +99,12 @@ allows at most six attempts while the robot remains within 2 m of its first
 retry position. After the limit it cancels the goal instead of retrying
 forever.
 
-The stuck calculation is important: it measures the *spread* of positions in
-the last 8 seconds, not distance advanced along the intended path. A robot
-rotating in place, moving slowly, or oscillating in a small area can therefore
-look stuck even if it is executing valid control behavior.
+The previous stuck calculation measured the *spread* of positions in the last
+8 seconds, not distance advanced along the intended path. The replacement
+projects odometry onto the active path, retains the maximum reached path
+distance, and resets its timer only after another `0.2 m` of cumulative
+progress. Initial/final rotation never enters the condition because it is not
+in `path_following`.
 
 ### Stuck-Replan Diagnostic Record
 
@@ -115,8 +117,8 @@ replan. It contains:
   `cmd_angular_z_rad_s`;
 - odometry position/yaw and LocalPlanner state;
 - `obstacle_ahead` from the local 3 m lethal-obstacle check; and
-- the stuck window, threshold, sample count, centroid, and maximum position
-  spread used by PositionTracker.
+- `path_progress_delta_m`, the time window, and the thresholds used by the
+  path-progress condition.
 
 This is diagnostic instrumentation only. It does not alter replan thresholds
 or controller behavior. A restarted process is required for the new fields to
@@ -192,12 +194,13 @@ safety review and map-level tests before real-robot use.
 
 ### D. Upgrade Replan Progress And Stability Logic
 
-Record the active path revision, distance advanced along the path, odometry
-spread, controller command, and local obstacle state when the 8-second tracker
-fires. Replace or supplement spatial spread with progress along the path;
-exclude expected initial/final rotations; require a persistent deviation or a
-materially blocked corridor before replacing a route; and add a minimum replan
-interval plus a path-change threshold.
+The first implementation replaces spatial spread with cumulative path progress:
+only `path_following` can be stuck; progress of at least `0.2 m` refreshes the
+8-second timer; forward command must exceed `0.1 m/s`; and goals within
+`0.5 m` are excluded. Obstacle and path-deviation replans remain independent.
+
+Future work can add slow-progress warnings, odometry freshness checks, and a
+minimum replan interval after this simpler condition is validated.
 
 **Benefits:** distinguishes an actual blockage from slow valid motion or map
 jitter, reducing route churn without suppressing genuine obstacle recovery.
@@ -278,6 +281,7 @@ Commit `9726f754` implements candidate A for the simple-nav planner chain.
 | `ReplanningAStarPlannerConfig` | Added validated non-negative settings `path_length_weight=1.0` and `path_cell_cost_weight=3.0`. |
 | `GlobalPlanner` | Passes these settings only into its `min_cost_astar` call. |
 | Regression test | Verifies legacy weights choose a low-cost terminal hook while the simple-nav weights choose the direct monotonic route, in both implementations. |
+| Stuck monitor | Replaces spatial spread with cumulative active-path progress and adds condition coverage. |
 
 ### Compatibility Boundary
 
@@ -307,8 +311,8 @@ cost-first behavior unless they explicitly opt in. The true simple-nav
 4. If necessary, tune `path_length_weight` and `path_cell_cost_weight` from
    the current `1.0` and `3.0` defaults. Do not tune both together without
    recording the scenario and result.
-5. Instrument and fix P2/P3/P5/P6 as separate work items before attributing
-   their effects to the new objective.
+5. Restart and validate the P3 path-progress monitor before tuning any more
+   A* weights. Then investigate P2/P5/P6 separately.
 6. Consider visibility shortcutting only after the weighted objective and map
    quality have been evaluated.
 
