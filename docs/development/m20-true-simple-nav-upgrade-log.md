@@ -34,13 +34,93 @@ length.
 | ID | State | Problem | Evidence | Effect |
 | --- | --- | --- | --- | --- |
 | P1 | Implemented | A* ranked map cost before distance. | A reproduced route was 0.354 m versus a 0.271 m direct corridor because it saved 8 raw cell-cost units. | Unnecessary winding and endpoint return hooks. |
-| P2 | Open | `initial_safe_radius_meters` clears only around global `(0, 0)`. | `CostMapper._apply_initial_safe_radius` computes distance from world zero, not robot odometry. | Near-robot sparse or unknown cells can remain after the robot moves away from origin. |
-| P3 | Open | Repeated stuck detection causes replanning. | Active simulation logs reported `Robot is stuck. Replanning.` about every 8 seconds. | Path is replaced frequently, making routes look unstable and complicating diagnosis. |
+| P2 | Open / design decision | `initial_safe_radius_meters` is a fixed startup disc around global `(0, 0)`. | `CostMapper._apply_initial_safe_radius` computes distance from world zero, not robot odometry. | It does not clean sparse cells near the robot after movement. |
+| P3 | Open | Repeated stuck detection causes replanning. | Active simulation logs reported `Robot is stuck. Replanning.` about every 8 seconds. The simulation threshold is 1.0 m over that window. | The full remaining route is replaced frequently, making routes look unstable and complicating diagnosis. |
 | P4 | Candidate | Grid path topology is passed directly to smoothing. | Smoothing made the existing raw A* terminal correction visually obvious; it did not create it. | Even a valid grid route can contain unnecessary bends. |
 | P5 | Open | Sparse map quality is not separately measured before path planning. | One inspected costmap contained about 38,808 unknown, 39,114 free, and 870 occupied cells. | Planner behavior can vary with local perception coverage rather than only geometry. |
+| P6 | Open | Unknown-cell policy differs between planning and local clearance. | A* may cross unknown at a penalty of 80, while local obstacle checking stops only for lethal cost 100. | The robot can plan through unobserved terrain without an explicit risk policy. |
 
 P2, P3, and P5 are related but are not yet proven to have the same root cause.
 They must be measured independently before changing control behavior.
+
+## Unknown Cells: Definition And Current Behavior
+
+An occupancy-grid cell is a 2D square of terrain, here normally 0.05 m by
+0.05 m. It is not an image pixel. For the current `height_cost` mapper, the
+values mean:
+
+| Value | Meaning | Current source |
+| --- | --- | --- |
+| `-1` | Unknown: the mapper cannot form a sufficiently reliable terrain cost. | No valid point observation remains after filtering/smoothing, or the cell lacks the configured number of valid neighboring observations needed for a slope calculation. |
+| `0` | Free / flat enough. | Observed terrain has negligible height change after noise filtering. |
+| `1..99` | Traversable but increasingly costly terrain. | The local terrain-height gradient approaches the configured climb limit. |
+| `100` | Lethal obstacle / non-traversable after map inflation. | A terrain gradient exceeds the limit or an obstacle footprint has been inflated by robot width. |
+
+Unknown therefore means **"the map does not have enough confidence to label
+this square"**, not "there is definitely an obstacle" and not "it is known
+free". Sensor blind spots, sparse rays, occlusion, map boundaries, filtered
+overhead-only returns, and insufficient neighbor support can all produce it.
+
+The current simple-nav policy is mixed:
+
+- CostMapper and the gradient stage preserve `-1`; obstacle inflation does not
+  turn unknown into `100`.
+- A* accepts unknown cells and charges `unknown_penalty * cost_threshold`,
+  currently `0.8 * 100 = 80`. It will use unknown only when the alternative
+  has a higher weighted objective or no route exists.
+- A clicked goal that is itself unknown is accepted without the normal safe-goal
+  search.
+- Local path clearance only stops for cells equal to `100` in the next 3 m of
+  the current path. It does not stop solely because a cell is unknown.
+
+This makes unknown a **soft global-planning risk**, but not a local hard stop.
+That may be acceptable for a well-tested exploration mode, but it is not yet a
+documented safety policy for this platform.
+
+## Exactly When Replanning Happens
+
+Receiving a new goal calls `_plan_path()` immediately. That is a new plan, not
+a recovery replan. A new global-costmap message by itself only updates the map
+cache; it does **not** automatically create a path.
+
+With an active goal, recovery replanning has these triggers:
+
+| Trigger | Current condition | Result |
+| --- | --- | --- |
+| Path deviation | Distance from odometry to the published path exceeds `0.9 m`. | Full remaining route is regenerated. |
+| No progress / stuck | After 8 s without a LocalPlanner state transition, all recent odometry positions lie within the configured threshold of their centroid. The default is `0.4 m`; the MuJoCo configuration raises it to `1.0 m`. | Full remaining route is regenerated. |
+| Obstacle ahead | The local controller finds a lethal (`100`) cell in the next 3 m of its path footprint. | It stops, then requests a full remaining route. |
+| Local planner error | The local controller thread raises an exception. | It stops, then requests a full remaining route. |
+
+Arrival is not a replan: it clears the goal. Before a recovery replan starts,
+the planner also has safeguards: if the robot is already within `0.5 m` of the
+goal it declares arrival; replanning can be disabled; and `ReplanLimiter`
+allows at most six attempts while the robot remains within 2 m of its first
+retry position. After the limit it cancels the goal instead of retrying
+forever.
+
+The stuck calculation is important: it measures the *spread* of positions in
+the last 8 seconds, not distance advanced along the intended path. A robot
+rotating in place, moving slowly, or oscillating in a small area can therefore
+look stuck even if it is executing valid control behavior.
+
+## What A "Replan" Replaces
+
+The current stack does not maintain a separate global route plus a local
+segment planner. On every recovery replan it:
+
+1. Stops the local controller and publishes an empty path.
+2. Uses the current odometry as the new start and retains the original active
+   goal.
+3. Finds a safe goal, regenerates the whole navigation costmap, and runs A*
+   from the current position to that goal.
+4. Smooths/resamples the complete remaining geometric path, publishes it, and
+   starts a new LocalPlanner controller thread.
+
+So it is a **full remaining global-path replan**, not a repair of only the next
+few meters. It is also not a time-parameterized trajectory optimization: the
+result is a complete 2D geometric path; the LocalPlanner produces velocity
+commands online at 10 Hz while following it.
 
 ## Candidate Solutions
 
@@ -75,42 +155,67 @@ field is irregular.
 **Trade-off:** requires robust line traversal and clearance validation. It is a
 second-stage improvement, not a substitute for correcting the objective.
 
-### C. Make The Safe Radius Follow Robot Odometry
+### C. Split Startup Clearing From A Deliberate Dynamic Local-Map Policy
 
-Pass current odometry or robot position into CostMapper and clear the initial
-safe disc around that current pose, rather than around global zero. Define the
-behavior explicitly for missing/stale odometry and for global-map updates.
+Keep `initial_safe_radius_meters` as a startup-only mechanism, because that is
+what its name and current implementation describe. If dynamic near-robot
+cleanup is required, introduce a separately named and explicitly bounded
+policy that uses current odometry and reports its age. It must define whether
+it clears only sensor self-points, only a robot footprint, or all unknown
+cells, and what happens when odometry is stale.
 
-**Benefits:** removes local sensor sparsity artefacts where the robot currently
-stands.
+**Benefits:** separates a startup convenience from an ongoing perception and
+safety policy, avoiding accidental use of a fixed map-origin disc as a dynamic
+robot bubble.
 
-**Trade-off:** clearing cells around the vehicle can hide a real obstacle if
-the radius is too large or odometry is wrong. It requires a safety review and
-map-level tests before real-robot use.
+**Trade-off:** indiscriminately clearing near-robot unknown cells can hide a
+real obstacle if the radius is too large or odometry is wrong. It requires a
+safety review and map-level tests before real-robot use.
 
-### D. Diagnose Stuck Replanning Separately
+### D. Upgrade Replan Progress And Stability Logic
 
-Record the active path revision, odometry displacement, controller commands,
-and local obstacle state when the 8-second tracker fires. Check whether the
-robot was actually blocked, making insufficient progress, or was following a
-newly replaced path.
+Record the active path revision, distance advanced along the path, odometry
+spread, controller command, and local obstacle state when the 8-second tracker
+fires. Replace or supplement spatial spread with progress along the path;
+exclude expected initial/final rotations; require a persistent deviation or a
+materially blocked corridor before replacing a route; and add a minimum replan
+interval plus a path-change threshold.
 
-**Benefits:** avoids treating a state-estimation, controller, or goal-tolerance
-problem as a path-search problem.
+**Benefits:** distinguishes an actual blockage from slow valid motion or map
+jitter, reducing route churn without suppressing genuine obstacle recovery.
 
 **Trade-off:** this adds observability first; it should not be "fixed" by only
 increasing the timeout.
 
-### E. Establish Map-Quality Admission Metrics
+### E. Define An Explicit Unknown-Cell Policy And Map-Quality Metrics
 
 Expose local unknown-cell ratio, free-cell ratio, and point-cloud freshness
-around the robot and the requested goal. Reject or label plans when the map is
-too sparse for the configured safety envelope.
+around the robot, path corridor, and requested goal. Then choose and test an
+operating mode: unknown allowed with penalty, unknown prohibited near the
+robot, or unknown prohibited everywhere except explicitly selected exploration
+goals. The global planner, safe-goal selection, and local clearance check must
+follow the same documented contract.
 
 **Benefits:** gives an operator and tests a clear distinction between an
 algorithmic failure and insufficient perception.
 
-**Trade-off:** requires selecting platform- and sensor-specific thresholds.
+**Trade-off:** requires selecting platform- and sensor-specific thresholds and
+may reduce reachable area in sparse maps.
+
+### F. Separate Global Route From Local Trajectory Recovery
+
+Keep the weighted A* route as the global geometric plan, but introduce a local
+rolling-horizon trajectory or path optimizer for short-range obstacle response
+and speed control. Major map topology changes should re-run global A*; small
+local changes should be resolved locally when safe.
+
+**Benefits:** avoids rebuilding the entire route for a transient local map
+change and matches the longer-term architecture of global path planner ->
+speed optimizer -> tracking controller.
+
+**Trade-off:** this is an architectural upgrade requiring clear module
+contracts, local-map inputs, and safety tests. It should follow observability
+and unknown-policy work, not precede them.
 
 ## Implemented Upgrade: P1 Weighted A*
 
@@ -152,8 +257,8 @@ cost-first behavior unless they explicitly opt in. The true simple-nav
 4. If necessary, tune `path_length_weight` and `path_cell_cost_weight` from
    the current `1.0` and `3.0` defaults. Do not tune both together without
    recording the scenario and result.
-5. Instrument and fix P2/P3/P5 as separate work items before attributing their
-   effects to the new objective.
+5. Instrument and fix P2/P3/P5/P6 as separate work items before attributing
+   their effects to the new objective.
 6. Consider visibility shortcutting only after the weighted objective and map
    quality have been evaluated.
 
