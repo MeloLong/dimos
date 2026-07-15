@@ -16,7 +16,7 @@ For a navigation run, recording is composed with the robot blueprint. The
 ```bash
 mkdir -p recordings
 dimos run m20-dan-nav nav-record \
-  --option nav_record.db_path=recordings/m20-dan-$(date +%Y%m%d_%H%M%S).db
+  --option navrecord.db_path=recordings/m20-dan-$(date +%Y%m%d_%H%M%S).db
 ```
 
 Stop the run gracefully with `Ctrl-C` so the SQLite database is closed and

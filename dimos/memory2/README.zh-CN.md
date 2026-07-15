@@ -14,7 +14,7 @@
 ```bash
 mkdir -p recordings
 dimos run m20-dan-nav nav-record \
-  --option nav_record.db_path=recordings/m20-dan-$(date +%Y%m%d_%H%M%S).db
+  --option navrecord.db_path=recordings/m20-dan-$(date +%Y%m%d_%H%M%S).db
 ```
 
 使用 `Ctrl-C` 正常停止，确保 SQLite 数据库完成关闭和落盘。`NavRecord` 的默认
