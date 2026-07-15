@@ -16,8 +16,6 @@
 
 from __future__ import annotations
 
-from dimos_lcm.std_msgs import Bool as LcmBool  # type: ignore[import-untyped]
-
 from dimos.core.core import rpc
 from dimos.core.stream import In
 from dimos.memory2.module import Recorder, RecorderConfig
@@ -26,6 +24,7 @@ from dimos.msgs.geometry_msgs.Twist import Twist
 from dimos.msgs.nav_msgs.Odometry import Odometry
 from dimos.msgs.nav_msgs.Path import Path as NavPath
 from dimos.msgs.sensor_msgs.PointCloud2 import PointCloud2
+from dimos.msgs.std_msgs.Bool import Bool
 from dimos.msgs.std_msgs.Int8 import Int8
 
 
@@ -53,12 +52,12 @@ class NavRecord(Recorder):
     goal_path: In[NavPath]
     way_point: In[PointStamped]
     goal: In[PointStamped]
-    stop_movement: In[LcmBool]
+    stop_movement: In[Bool]
 
     # LocalPlanner details
     effective_cmd_vel: In[Twist]
     slow_down: In[Int8]
-    goal_reached: In[LcmBool]
+    goal_reached: In[Bool]
 
     # Point clouds
     terrain_map: In[PointCloud2]

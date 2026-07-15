@@ -31,7 +31,6 @@ import time
 import traceback
 from typing import Any, Literal, TypeAlias
 
-from dimos_lcm.std_msgs import Bool  # type: ignore[import-untyped]
 import numpy as np
 from reactivex import Subject
 from reactivex.disposable import Disposable
@@ -45,6 +44,7 @@ from dimos.msgs.geometry_msgs.PoseStamped import PoseStamped
 from dimos.msgs.geometry_msgs.Twist import Twist
 from dimos.msgs.geometry_msgs.Vector3 import Vector3
 from dimos.msgs.nav_msgs.Path import Path
+from dimos.msgs.std_msgs.Bool import Bool
 from dimos.navigation.base import NavigationState
 from dimos.navigation.dannav.geometry.path_distancer import PathDistancer
 from dimos.navigation.dannav.geometry.path_speed_profile import (

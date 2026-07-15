@@ -25,7 +25,6 @@ import threading
 import time
 from typing import Any
 
-from dimos_lcm.std_msgs import Bool  # type: ignore[import-untyped]
 from reactivex.disposable import Disposable
 
 from dimos.core.core import rpc
@@ -34,6 +33,7 @@ from dimos.core.stream import In, Out
 from dimos.msgs.geometry_msgs.PointStamped import PointStamped
 from dimos.msgs.geometry_msgs.Twist import Twist
 from dimos.msgs.geometry_msgs.Vector3 import Vector3
+from dimos.msgs.std_msgs.Bool import Bool
 from dimos.utils.logging_config import setup_logger
 
 logger = setup_logger()
