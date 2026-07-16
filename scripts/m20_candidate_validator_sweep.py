@@ -9,6 +9,7 @@ from collections import Counter
 from itertools import pairwise
 import json
 import math
+import os
 from pathlib import Path
 import time
 from typing import Any
@@ -102,6 +103,40 @@ def _distribution(values: list[float]) -> dict[str, float] | None:
         "median": round(float(np.median(array)), 4),
         "p95": round(float(np.percentile(array, 95)), 4),
         "max": round(float(np.max(array)), 4),
+    }
+
+
+def _process_tree_snapshot(root_pid: int) -> dict[str, float | int]:
+    processes: dict[int, tuple[int, float, int]] = {}
+    clock_ticks = os.sysconf("SC_CLK_TCK")
+    page_size = os.sysconf("SC_PAGE_SIZE")
+    for stat_path in Path("/proc").glob("[0-9]*/stat"):
+        try:
+            payload = stat_path.read_text(encoding="utf-8")
+            pid = int(stat_path.parent.name)
+            fields = payload[payload.rfind(")") + 2 :].split()
+            processes[pid] = (
+                int(fields[1]),
+                (int(fields[11]) + int(fields[12])) / clock_ticks,
+                int((stat_path.parent / "statm").read_text().split()[1]) * page_size,
+            )
+        except (FileNotFoundError, IndexError, PermissionError, ValueError):
+            continue
+
+    descendants = {root_pid}
+    changed = True
+    while changed:
+        changed = False
+        for pid, (parent_pid, _, _) in processes.items():
+            if parent_pid in descendants and pid not in descendants:
+                descendants.add(pid)
+                changed = True
+
+    rows = [processes[pid] for pid in descendants if pid in processes]
+    return {
+        "processes": len(rows),
+        "cpu_seconds": sum(row[1] for row in rows),
+        "rss_bytes": sum(row[2] for row in rows),
     }
 
 
@@ -200,6 +235,8 @@ def _summarize(cases: list[dict[str, Any]], initial_odom: tuple[float, float]) -
         "hard_invalid_candidates": hard_invalid_candidates,
         "unknown_increase_candidates": unknown_increase_candidates,
         "selected_deltas": {name: _distribution(values) for name, values in deltas.items()},
+        "planner_latency_ms": _distribution([case["planner_latency_ms"] for case in successful]),
+        "log_bytes_per_case": _distribution([float(case["log_bytes"]) for case in cases]),
     }
 
 
@@ -208,9 +245,15 @@ def _arguments() -> argparse.Namespace:
     parser.add_argument("--rounds", type=int, default=3)
     parser.add_argument("--goal-timeout-s", type=float, default=1.5)
     parser.add_argument("--settle-s", type=float, default=0.15)
+    parser.add_argument("--post-plan-hold-s", type=float, default=0.3)
     parser.add_argument("--initial-wait-s", type=float, default=0.0)
     parser.add_argument("--scenario", default="default-grid")
     parser.add_argument("--phase", default="unspecified")
+    parser.add_argument(
+        "--dimos-pid-file",
+        type=Path,
+        help="PID file for whole-process-tree CPU and RSS sampling",
+    )
     parser.add_argument(
         "--goals-file",
         type=Path,
@@ -236,10 +279,17 @@ def _arguments() -> argparse.Namespace:
     args = parser.parse_args()
     if args.rounds < 1:
         parser.error("--rounds must be at least 1")
-    if args.goal_timeout_s <= 0 or args.settle_s < 0 or args.initial_wait_s < 0:
+    if (
+        args.goal_timeout_s <= 0
+        or args.settle_s < 0
+        or args.initial_wait_s < 0
+        or args.post_plan_hold_s < 0
+    ):
         parser.error("timeouts must be positive and settle time non-negative")
     if args.goals_file is not None and not args.goals_file.is_file():
         parser.error(f"goals file not found: {args.goals_file}")
+    if args.dimos_pid_file is not None and not args.dimos_pid_file.is_file():
+        parser.error(f"DimOS PID file not found: {args.dimos_pid_file}")
     return args
 
 
@@ -294,6 +344,14 @@ def main() -> None:
     args.output.mkdir(parents=True, exist_ok=True)
     initial_odom = (latest_odom.x, latest_odom.y)
     cases: list[dict[str, Any]] = []
+    root_pid = (
+        None
+        if args.dimos_pid_file is None
+        else int(args.dimos_pid_file.read_text(encoding="utf-8").strip())
+    )
+    resource_started_at = time.monotonic()
+    resource_start = None if root_pid is None else _process_tree_snapshot(root_pid)
+    resource_samples = [] if resource_start is None else [resource_start]
     print(f"initial_odom=({initial_odom[0]:.3f}, {initial_odom[1]:.3f})")
 
     for round_index in range(1, args.rounds + 1):
@@ -303,6 +361,9 @@ def main() -> None:
             log_offset = args.log.stat().st_size
 
             if args.hold_position:
+                # Let LocalPlanner consume the new path before cancellation;
+                # stopping immediately can clear it between start and _loop().
+                time.sleep(args.post_plan_hold_s)
                 transport.publish(TELEOP_TOPIC, Twist.zero().lcm_encode())
                 # Let stop_movement cancellation finish before the next goal.
                 time.sleep(0.2)
@@ -310,11 +371,14 @@ def main() -> None:
                 CLICK_TOPIC,
                 PointStamped(goal_x, goal_y, 0.0, frame_id="world").lcm_encode(),
             )
+            goal_published_at = time.monotonic()
 
             deadline = time.monotonic() + args.goal_timeout_s
+            planner_latency_ms: float | None = None
             while time.monotonic() < deadline:
                 transport.handle_timeout(50)
                 if raw_sequence > before_raw and path_sequence > before_path:
+                    planner_latency_ms = (time.monotonic() - goal_published_at) * 1000
                     break
 
             log_deadline = time.monotonic() + 0.5
@@ -336,6 +400,8 @@ def main() -> None:
                 time.sleep(0.2)
                 transport.handle_timeout(0)
 
+            log_bytes = args.log.stat().st_size - log_offset
+
             odom = latest_odom
             planned = raw_sequence > before_raw and path_sequence > before_path
             if not planned or latest_raw is None or latest_path is None:
@@ -346,6 +412,8 @@ def main() -> None:
                     "status": "no_path_or_timeout",
                     "odom": None if odom is None else [round(odom.x, 4), round(odom.y, 4)],
                     "shadow_records": len(shadow_records),
+                    "planner_latency_ms": planner_latency_ms,
+                    "log_bytes": log_bytes,
                 }
             elif len(shadow_records) != 1:
                 result = {
@@ -355,6 +423,8 @@ def main() -> None:
                     "status": "shadow_record_mismatch",
                     "odom": [round(odom.x, 4), round(odom.y, 4)],
                     "shadow_records": len(shadow_records),
+                    "planner_latency_ms": planner_latency_ms,
+                    "log_bytes": log_bytes,
                 }
             elif shadow_records[0].get("raw_baseline_valid") is False:
                 result = {
@@ -365,6 +435,8 @@ def main() -> None:
                     "odom": [round(odom.x, 4), round(odom.y, 4)],
                     "shadow_records": 1,
                     "shadow": shadow_records[0],
+                    "planner_latency_ms": planner_latency_ms,
+                    "log_bytes": log_bytes,
                 }
             else:
                 result = {
@@ -379,6 +451,8 @@ def main() -> None:
                     "output_turn_rad": round(_path_turn(latest_path), 4),
                     "shadow_records": len(shadow_records),
                     "shadow": shadow_records[-1],
+                    "planner_latency_ms": planner_latency_ms,
+                    "log_bytes": log_bytes,
                 }
                 np.savez_compressed(
                     args.output / f"round-{round_index:02d}-case-{goal_index:02d}.npz",
@@ -388,6 +462,8 @@ def main() -> None:
                     output=_path_xy(latest_path),
                 )
             cases.append(result)
+            if root_pid is not None:
+                resource_samples.append(_process_tree_snapshot(root_pid))
             print(
                 f"round={round_index} case={goal_index:02d} goal=({goal_x:.1f},{goal_y:.1f}) "
                 f"status={result['status']} shadow={result['shadow_records']}"
@@ -397,17 +473,39 @@ def main() -> None:
     if args.hold_position:
         transport.publish(TELEOP_TOPIC, Twist.zero().lcm_encode())
 
+    resources = None
+    if root_pid is not None and resource_start is not None:
+        resource_end = _process_tree_snapshot(root_pid)
+        elapsed_s = time.monotonic() - resource_started_at
+        resources = {
+            "root_pid": root_pid,
+            "elapsed_s": round(elapsed_s, 4),
+            "average_cpu_cores": round(
+                (resource_end["cpu_seconds"] - resource_start["cpu_seconds"]) / elapsed_s,
+                4,
+            ),
+            "start_rss_mb": round(resource_start["rss_bytes"] / 1024**2, 3),
+            "end_rss_mb": round(resource_end["rss_bytes"] / 1024**2, 3),
+            "peak_sampled_rss_mb": round(
+                max(sample["rss_bytes"] for sample in resource_samples) / 1024**2,
+                3,
+            ),
+            "peak_processes": max(sample["processes"] for sample in resource_samples),
+        }
+
     report = {
         "created_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
         "hold_position": args.hold_position,
         "scenario": args.scenario,
         "phase": args.phase,
         "initial_wait_s": args.initial_wait_s,
+        "post_plan_hold_s": args.post_plan_hold_s,
         "goals_file": None if args.goals_file is None else str(args.goals_file),
         "rounds": args.rounds,
         "goals_per_round": len(goals),
         "initial_odom": list(initial_odom),
         "summary": _summarize(cases, initial_odom),
+        "resources": resources,
         "cases": cases,
     }
     report_path = args.output / "report.json"
