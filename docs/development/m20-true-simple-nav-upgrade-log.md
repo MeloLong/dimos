@@ -114,6 +114,43 @@ behavior, replans, and clearance over time.
 
 ![Real M20 costmap replay comparison](assets/m20-constrained-smoothing-real-snapshots.webp)
 
+#### Conclusions From The Replay
+
+1. The improvement is not produced by a long-range shortcut. The constrained
+   path remains inside the raw A* local corridor and preserves the same route
+   topology while removing grid-scale left/right bends.
+2. The constrained smoother outperformed the legacy moving average in both
+   recorded cases: cumulative turn fell by about 24% in Planning and 28% in
+   Detour, while path length also fell by 0.04 m and 0.07 m respectively.
+3. The observed maximum nearest raw-point distance was 0.081 m, below the
+   configured 0.10 m displacement limit. Both outputs passed a stricter 0.025 m
+   swept-segment lethal-cell replay check.
+4. Forty iterations were sufficient for these paths. Measured offline latency
+   was 57-126 ms, so increasing the iteration count without evidence would add
+   planning delay for little geometric benefit.
+5. This evidence validates static path geometry, fallback boundaries, and
+   costmap safety checks. It does not yet prove lower closed-loop steering
+   oscillation or unchanged clearance during motion; those remain MuJoCo tests.
+6. Stage 2 turn-aware A* should remain deferred until runtime testing shows
+   that significant raw-path alternation survives the 0.10 m smoothing tube.
+
+#### New Planner Parameters
+
+| Parameter | Current value | Purpose and tuning effect |
+| --- | ---: | --- |
+| `constrained_path_smoothing_enabled` | `true` | Selects the bounded costmap-aware smoother. `false` restores legacy moving-average behavior. |
+| `path_smoothing_iterations` | `40` | Maximum optimizer passes. More may improve convergence but increases planning latency; `0` skips adjustment and only resamples raw A*. |
+| `path_smoothing_data_weight` | `0.02` | Pull toward matching raw A* points, range `0..1`. Higher is more route-faithful but retains more grid stair-stepping; lower allows stronger smoothing within the hard tube. |
+| `path_smoothing_smoothness_weight` | `0.45` | Neighbor smoothness strength, range `0..0.5`. Higher removes local bends more strongly; `0` disables this correction. |
+| `path_smoothing_max_deviation_m` | `0.10 m` | Hard displacement limit from each matching raw A* point. Larger values allow more rounding but weaken route fidelity; `0` disables geometric adjustment. |
+| `path_smoothing_collision_sample_spacing_m` | `0.05 m` | Costmap sample interval along candidate segments. Smaller is stricter but costs more CPU; it should not exceed map resolution. |
+| `path_smoothing_max_cost_increase` | `2.0` | Maximum allowed mean cost increase over the raw local/whole path. `0` permits no increase; lethal and out-of-map cells are rejected regardless. |
+| `path_resample_spacing_m` | `0.10 m` | Final controller waypoint spacing. Smaller better represents curves with more processing; larger reduces point count but can lose tight geometry. |
+
+`publish_raw_path` is a related diagnostic switch rather than a smoothing
+coefficient. When enabled it publishes `/raw_path` for Rerun comparison without
+changing the path consumed by `LocalPlanner`.
+
 ## Evidence And Problems
 
 | ID | State | Problem | Evidence | Effect |

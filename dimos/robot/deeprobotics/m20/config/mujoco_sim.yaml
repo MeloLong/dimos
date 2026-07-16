@@ -61,24 +61,45 @@ mlsplannernative:
   wall_clearance_m: 0.45
 
 replanningastarplanner:
-  # Publish the raw grid-cell A* route on /raw_path for Rerun comparison.
-  # Keep disabled during normal operation; restart DimOS after changing it.
+  # Diagnostic switch: publish raw grid-cell A* output on /raw_path.
+  # Enable only when comparing raw and smoothed paths in Rerun; it does not
+  # alter the controller path. Disable during normal operation to reduce traffic.
   publish_raw_path: false
 
-  # Use bounded local smoothing instead of the legacy unconstrained moving average.
+  # Select the costmap-aware bounded smoother. False uses the legacy unconstrained
+  # moving average. Changing this setting requires restarting DimOS.
   constrained_path_smoothing_enabled: true
 
-  # Iterative reference/curvature optimizer settings.
+  # Maximum smoothing iterations, integer >= 0. More iterations can improve
+  # convergence but increase planning latency; 0 returns uniformly resampled raw A*.
   path_smoothing_iterations: 40
+
+  # Attraction to each original A* point, range [0.0, 1.0]. Increasing it keeps
+  # the path closer to grid geometry but preserves more stair-stepping; decreasing
+  # it lets neighbour smoothing dominate up to path_smoothing_max_deviation_m.
   path_smoothing_data_weight: 0.02
+
+  # Neighbour/Laplacian smoothing strength, range [0.0, 0.5]. Increasing it removes
+  # local bends more strongly; 0 disables neighbour smoothing. The 0.5 upper bound
+  # protects the iterative update from unstable oscillation.
   path_smoothing_smoothness_weight: 0.45
 
-  # Hard lateral tube around each raw A* point, in metres.
+  # Hard maximum displacement of each adjusted point from its matching raw A* point,
+  # in metres, value >= 0. Larger values permit rounder but less route-faithful paths;
+  # 0 disables geometric adjustment. Costmap checks still apply at every value.
   path_smoothing_max_deviation_m: 0.10
 
-  # Costmap validation interval and allowed mean-cost increase.
+  # Distance in metres between costmap samples along candidate path segments, > 0.
+  # Smaller values improve thin-obstacle detection but increase planning CPU time.
+  # Keep this no larger than the 0.05 m costmap resolution; use 0.025 for stricter tests.
   path_smoothing_collision_sample_spacing_m: 0.05
+
+  # Maximum permitted increase in mean costmap cost versus the raw local path,
+  # value >= 0. A value of 0 forbids any cost increase; larger values allow more
+  # rounding near inflated gradients. Lethal and out-of-map cells are always rejected.
   path_smoothing_max_cost_increase: 2.0
 
-  # Final controller-path spacing, in metres.
+  # Approximate spacing between final controller waypoints, in metres, > 0.
+  # Smaller values preserve curves but increase message/controller work; larger
+  # values reduce points but may under-represent tight bends.
   path_resample_spacing_m: 0.10
