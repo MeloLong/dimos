@@ -1,0 +1,4 @@
+metric,count,ratio
+physical plans,129,1.0
+legacy matches physical,83,0.6434108527131783
+physical raw fallback,34,0.26356589147286824

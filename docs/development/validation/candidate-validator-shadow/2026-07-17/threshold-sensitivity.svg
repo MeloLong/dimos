@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="354" viewBox="0 0 960 354" role="img" aria-labelledby="title desc">
+<title id="title">Strict-unknown raw fallback sensitivity</title>
+<desc id="desc">Horizontal bar chart with values labeled on every bar.</desc>
+<style>text{font:14px sans-serif;fill:#20262d} rect{fill:#2f7d71} .title{font-size:20px;font-weight:500}</style>
+<text class="title" x="24" y="32">Strict-unknown raw fallback sensitivity</text>
+<text x="248" y="75" text-anchor="end">0.000 m</text><rect x="260" y="58" width="620.00" height="24" rx="2"/><text x="888.00" y="75">13.9%</text><text x="248" y="119" text-anchor="end">0.010 m</text><rect x="260" y="102" width="620.00" height="24" rx="2"/><text x="888.00" y="119">13.9%</text><text x="248" y="163" text-anchor="end">0.020 m</text><rect x="260" y="146" width="620.00" height="24" rx="2"/><text x="888.00" y="163">13.9%</text><text x="248" y="207" text-anchor="end">0.025 m</text><rect x="260" y="190" width="620.00" height="24" rx="2"/><text x="888.00" y="207">13.9%</text><text x="248" y="251" text-anchor="end">0.030 m</text><rect x="260" y="234" width="620.00" height="24" rx="2"/><text x="888.00" y="251">13.9%</text><text x="248" y="295" text-anchor="end">0.050 m</text><rect x="260" y="278" width="620.00" height="24" rx="2"/><text x="888.00" y="295">13.9%</text>
+</svg>

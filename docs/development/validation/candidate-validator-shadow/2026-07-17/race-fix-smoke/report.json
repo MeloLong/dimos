@@ -1,0 +1,1178 @@
+{
+  "created_at": "2026-07-17T00:56:01+0800",
+  "hold_position": true,
+  "scenario": "office-dynamic-person",
+  "phase": "race-fix-smoke",
+  "initial_wait_s": 5.0,
+  "post_plan_hold_s": 0.3,
+  "goals_file": "docs/development/validation/candidate-validator-shadow/2026-07-17/office-smoke-goals.json",
+  "rounds": 1,
+  "goals_per_round": 10,
+  "initial_odom": [
+    -1.0056578021496094,
+    0.9999396095176603
+  ],
+  "summary": {
+    "cases": 10,
+    "planned": 9,
+    "status_counts": {
+      "no_path_or_timeout": 1,
+      "planned": 9
+    },
+    "no_path_or_timeout": 1,
+    "shadow_record_mismatch": 0,
+    "raw_baseline_invalid": 0,
+    "selection_counts": {
+      "1.0": 9
+    },
+    "physical_selection_counts": {
+      "0.125": 1,
+      "0.5": 1,
+      "1.0": 6,
+      "raw": 1
+    },
+    "physical_decision_matches": 6,
+    "physical_policy_violations": 0,
+    "max_odom_drift_m": 0.0001,
+    "hard_invalid_candidates": 0,
+    "unknown_increase_candidates": 19,
+    "selected_deltas": {
+      "min_clearance_loss_m": {
+        "min": 0.0,
+        "p05": 0.0,
+        "median": 0.0,
+        "p95": 0.0,
+        "max": 0.0
+      },
+      "p5_clearance_loss_m": {
+        "min": -0.0094,
+        "p05": -0.0023,
+        "median": 0.0209,
+        "p95": 0.036,
+        "max": 0.0378
+      },
+      "unknown_length_increase_m": {
+        "min": -0.0338,
+        "p05": -0.027,
+        "median": -0.0008,
+        "p95": 0.0503,
+        "max": 0.0612
+      },
+      "unknown_ratio_increase": {
+        "min": -0.0028,
+        "p05": -0.0022,
+        "median": 0.0027,
+        "p95": 0.0192,
+        "max": 0.0239
+      },
+      "path_length_change_m": {
+        "min": -0.1797,
+        "p05": -0.1765,
+        "median": -0.1164,
+        "p95": -0.049,
+        "max": -0.0383
+      },
+      "cumulative_turn_change_rad": {
+        "min": -7.6936,
+        "p05": -7.2796,
+        "median": -5.1237,
+        "p95": -2.8366,
+        "max": -2.5992
+      }
+    },
+    "planner_latency_ms": {
+      "min": 130.6699,
+      "p05": 131.524,
+      "median": 172.2498,
+      "p95": 284.6384,
+      "max": 331.6906
+    },
+    "log_bytes_per_case": {
+      "min": 3394.0,
+      "p05": 3419.65,
+      "median": 3693.5,
+      "p95": 4928.75,
+      "max": 5606.0
+    }
+  },
+  "resources": {
+    "root_pid": 1105013,
+    "elapsed_s": 12.4887,
+    "average_cpu_cores": 7.9039,
+    "start_rss_mb": 7400.512,
+    "end_rss_mb": 7468.219,
+    "peak_sampled_rss_mb": 7468.301,
+    "peak_processes": 19
+  },
+  "cases": [
+    {
+      "round": 1,
+      "case": 1,
+      "goal": [
+        -2.0,
+        4.5
+      ],
+      "status": "planned",
+      "odom": [
+        -1.0057,
+        1.0
+      ],
+      "raw_length_m": 3.9142,
+      "output_length_m": 3.6969,
+      "raw_turn_rad": 18.0642,
+      "output_turn_rad": 1.349,
+      "shadow_records": 1,
+      "shadow": {
+        "legacy_selected_alpha": 1.0,
+        "physical_selected_alpha": 1.0,
+        "physical_decision_matches_legacy": true,
+        "physical_validator_evaluated": true,
+        "physical_max_clearance_loss_m": 0.025,
+        "physical_max_unknown_length_increase_m": 0.0,
+        "legacy_max_allowed_cost": 24.3085,
+        "selected_alpha": 1.0,
+        "selected_path": "candidate",
+        "raw_baseline_valid": true,
+        "raw": {
+          "path_length_m": 3.8133,
+          "cumulative_turn_rad": 8.0077,
+          "min_clearance_m": 0.7433,
+          "p5_clearance_m": 0.9071,
+          "unknown_length_m": 0.9067,
+          "unknown_ratio": 0.2378,
+          "mean_cost": 22.3085,
+          "validation_reason": null
+        },
+        "candidates": [
+          {
+            "alpha": 1.0,
+            "legacy_gate_passed": true,
+            "legacy_rejection_reason": null,
+            "path_length_m": 3.6969,
+            "cumulative_turn_rad": 1.349,
+            "min_clearance_m": 0.7433,
+            "p5_clearance_m": 0.8738,
+            "unknown_length_m": 0.8975,
+            "unknown_ratio": 0.2428,
+            "mean_cost": 21.7467,
+            "validation_reason": null,
+            "physical_gate_passed": true,
+            "physical_rejection_reason": null,
+            "min_clearance_loss_m": 0.0,
+            "unknown_length_increase_m": -0.0093
+          },
+          {
+            "alpha": 0.5,
+            "legacy_gate_passed": true,
+            "legacy_rejection_reason": null,
+            "path_length_m": 3.7327,
+            "cumulative_turn_rad": 3.5237,
+            "min_clearance_m": 0.7433,
+            "p5_clearance_m": 0.8774,
+            "unknown_length_m": 0.9139,
+            "unknown_ratio": 0.2448,
+            "mean_cost": 21.0519,
+            "validation_reason": null,
+            "physical_gate_passed": false,
+            "physical_rejection_reason": "unknown_length_increase",
+            "min_clearance_loss_m": 0.0,
+            "unknown_length_increase_m": 0.0072
+          },
+          {
+            "alpha": 0.25,
+            "legacy_gate_passed": true,
+            "legacy_rejection_reason": null,
+            "path_length_m": 3.7689,
+            "cumulative_turn_rad": 6.4137,
+            "min_clearance_m": 0.7433,
+            "p5_clearance_m": 0.8792,
+            "unknown_length_m": 0.924,
+            "unknown_ratio": 0.2452,
+            "mean_cost": 20.8205,
+            "validation_reason": null,
+            "physical_gate_passed": false,
+            "physical_rejection_reason": "unknown_length_increase",
+            "min_clearance_loss_m": 0.0,
+            "unknown_length_increase_m": 0.0173
+          },
+          {
+            "alpha": 0.125,
+            "legacy_gate_passed": true,
+            "legacy_rejection_reason": null,
+            "path_length_m": 3.7921,
+            "cumulative_turn_rad": 7.2047,
+            "min_clearance_m": 0.7433,
+            "p5_clearance_m": 0.881,
+            "unknown_length_m": 0.9191,
+            "unknown_ratio": 0.2424,
+            "mean_cost": 20.519,
+            "validation_reason": null,
+            "physical_gate_passed": false,
+            "physical_rejection_reason": "unknown_length_increase",
+            "min_clearance_loss_m": 0.0,
+            "unknown_length_increase_m": 0.0124
+          }
+        ],
+        "timing": {
+          "clearance_transform_ms": 3.2971,
+          "candidate_evaluation_ms": 5.2092,
+          "validator_total_ms": 38.9842
+        }
+      },
+      "planner_latency_ms": 331.69061699300073,
+      "log_bytes": 4044
+    },
+    {
+      "round": 1,
+      "case": 2,
+      "goal": [
+        -1.0,
+        4.5
+      ],
+      "status": "planned",
+      "odom": [
+        -1.0057,
+        1.0
+      ],
+      "raw_length_m": 4.1627,
+      "output_length_m": 3.9301,
+      "raw_turn_rad": 19.635,
+      "output_turn_rad": 1.7553,
+      "shadow_records": 1,
+      "shadow": {
+        "legacy_selected_alpha": 1.0,
+        "physical_selected_alpha": 0.125,
+        "physical_decision_matches_legacy": false,
+        "physical_validator_evaluated": true,
+        "physical_max_clearance_loss_m": 0.025,
+        "physical_max_unknown_length_increase_m": 0.0,
+        "legacy_max_allowed_cost": 25.5258,
+        "selected_alpha": 1.0,
+        "selected_path": "candidate",
+        "raw_baseline_valid": true,
+        "raw": {
+          "path_length_m": 4.0536,
+          "cumulative_turn_rad": 7.1222,
+          "min_clearance_m": 0.8544,
+          "p5_clearance_m": 0.9893,
+          "unknown_length_m": 1.0695,
+          "unknown_ratio": 0.2638,
+          "mean_cost": 23.5258,
+          "validation_reason": null
+        },
+        "candidates": [
+          {
+            "alpha": 1.0,
+            "legacy_gate_passed": true,
+            "legacy_rejection_reason": null,
+            "path_length_m": 3.9301,
+            "cumulative_turn_rad": 1.7553,
+            "min_clearance_m": 0.8544,
+            "p5_clearance_m": 0.9598,
+            "unknown_length_m": 1.1307,
+            "unknown_ratio": 0.2877,
+            "mean_cost": 23.675,
+            "validation_reason": null,
+            "physical_gate_passed": false,
+            "physical_rejection_reason": "unknown_length_increase",
+            "min_clearance_loss_m": 0.0,
+            "unknown_length_increase_m": 0.0612
+          },
+          {
+            "alpha": 0.5,
+            "legacy_gate_passed": true,
+            "legacy_rejection_reason": null,
+            "path_length_m": 3.9742,
+            "cumulative_turn_rad": 3.3064,
+            "min_clearance_m": 0.8544,
+            "p5_clearance_m": 0.9618,
+            "unknown_length_m": 1.1038,
+            "unknown_ratio": 0.2777,
+            "mean_cost": 23.8659,
+            "validation_reason": null,
+            "physical_gate_passed": false,
+            "physical_rejection_reason": "unknown_length_increase",
+            "min_clearance_loss_m": 0.0,
+            "unknown_length_increase_m": 0.0343
+          },
+          {
+            "alpha": 0.25,
+            "legacy_gate_passed": true,
+            "legacy_rejection_reason": null,
+            "path_length_m": 4.0119,
+            "cumulative_turn_rad": 6.2656,
+            "min_clearance_m": 0.8544,
+            "p5_clearance_m": 0.9652,
+            "unknown_length_m": 1.1217,
+            "unknown_ratio": 0.2796,
+            "mean_cost": 23.5181,
+            "validation_reason": null,
+            "physical_gate_passed": false,
+            "physical_rejection_reason": "unknown_length_increase",
+            "min_clearance_loss_m": 0.0,
+            "unknown_length_increase_m": 0.0521
+          },
+          {
+            "alpha": 0.125,
+            "legacy_gate_passed": true,
+            "legacy_rejection_reason": null,
+            "path_length_m": 4.0314,
+            "cumulative_turn_rad": 6.6758,
+            "min_clearance_m": 0.8544,
+            "p5_clearance_m": 0.9669,
+            "unknown_length_m": 1.0579,
+            "unknown_ratio": 0.2624,
+            "mean_cost": 24.1905,
+            "validation_reason": null,
+            "physical_gate_passed": true,
+            "physical_rejection_reason": null,
+            "min_clearance_loss_m": 0.0,
+            "unknown_length_increase_m": -0.0117
+          }
+        ],
+        "timing": {
+          "clearance_transform_ms": 3.1373,
+          "candidate_evaluation_ms": 6.5259,
+          "validator_total_ms": 64.7204
+        }
+      },
+      "planner_latency_ms": 177.1403470193036,
+      "log_bytes": 4047
+    },
+    {
+      "round": 1,
+      "case": 3,
+      "goal": [
+        -5.0,
+        0.5
+      ],
+      "status": "planned",
+      "odom": [
+        -1.0057,
+        1.0
+      ],
+      "raw_length_m": 4.6627,
+      "output_length_m": 4.4122,
+      "raw_turn_rad": 17.2788,
+      "output_turn_rad": 2.3568,
+      "shadow_records": 1,
+      "shadow": {
+        "legacy_selected_alpha": 1.0,
+        "physical_selected_alpha": 1.0,
+        "physical_decision_matches_legacy": true,
+        "physical_validator_evaluated": true,
+        "physical_max_clearance_loss_m": 0.025,
+        "physical_max_unknown_length_increase_m": 0.0,
+        "legacy_max_allowed_cost": 19.5273,
+        "selected_alpha": 1.0,
+        "selected_path": "candidate",
+        "raw_baseline_valid": true,
+        "raw": {
+          "path_length_m": 4.5622,
+          "cumulative_turn_rad": 7.4805,
+          "min_clearance_m": 0.1414,
+          "p5_clearance_m": 0.3113,
+          "unknown_length_m": 0.15,
+          "unknown_ratio": 0.0329,
+          "mean_cost": 17.5273,
+          "validation_reason": null
+        },
+        "candidates": [
+          {
+            "alpha": 1.0,
+            "legacy_gate_passed": true,
+            "legacy_rejection_reason": null,
+            "path_length_m": 4.4122,
+            "cumulative_turn_rad": 2.3568,
+            "min_clearance_m": 0.1414,
+            "p5_clearance_m": 0.2904,
+            "unknown_length_m": 0.15,
+            "unknown_ratio": 0.034,
+            "mean_cost": 18.7556,
+            "validation_reason": null,
+            "physical_gate_passed": true,
+            "physical_rejection_reason": null,
+            "min_clearance_loss_m": 0.0,
+            "unknown_length_increase_m": -0.0
+          },
+          {
+            "alpha": 0.5,
+            "legacy_gate_passed": true,
+            "legacy_rejection_reason": null,
+            "path_length_m": 4.4675,
+            "cumulative_turn_rad": 4.6855,
+            "min_clearance_m": 0.1414,
+            "p5_clearance_m": 0.2927,
+            "unknown_length_m": 0.15,
+            "unknown_ratio": 0.0336,
+            "mean_cost": 17.4945,
+            "validation_reason": null,
+            "physical_gate_passed": true,
+            "physical_rejection_reason": null,
+            "min_clearance_loss_m": 0.0,
+            "unknown_length_increase_m": -0.0
+          },
+          {
+            "alpha": 0.25,
+            "legacy_gate_passed": true,
+            "legacy_rejection_reason": null,
+            "path_length_m": 4.5134,
+            "cumulative_turn_rad": 6.5226,
+            "min_clearance_m": 0.1414,
+            "p5_clearance_m": 0.2974,
+            "unknown_length_m": 0.15,
+            "unknown_ratio": 0.0332,
+            "mean_cost": 17.1505,
+            "validation_reason": null,
+            "physical_gate_passed": true,
+            "physical_rejection_reason": null,
+            "min_clearance_loss_m": 0.0,
+            "unknown_length_increase_m": -0.0
+          },
+          {
+            "alpha": 0.125,
+            "legacy_gate_passed": true,
+            "legacy_rejection_reason": null,
+            "path_length_m": 4.5261,
+            "cumulative_turn_rad": 6.988,
+            "min_clearance_m": 0.1414,
+            "p5_clearance_m": 0.2533,
+            "unknown_length_m": 0.15,
+            "unknown_ratio": 0.0331,
+            "mean_cost": 17.8085,
+            "validation_reason": null,
+            "physical_gate_passed": true,
+            "physical_rejection_reason": null,
+            "min_clearance_loss_m": 0.0,
+            "unknown_length_increase_m": -0.0
+          }
+        ],
+        "timing": {
+          "clearance_transform_ms": 3.6597,
+          "candidate_evaluation_ms": 7.4204,
+          "validator_total_ms": 45.7609
+        }
+      },
+      "planner_latency_ms": 172.24978900048882,
+      "log_bytes": 3394
+    },
+    {
+      "round": 1,
+      "case": 4,
+      "goal": [
+        -4.0,
+        4.5
+      ],
+      "status": "no_path_or_timeout",
+      "odom": [
+        -1.0057,
+        1.0
+      ],
+      "shadow_records": 0,
+      "planner_latency_ms": null,
+      "log_bytes": 3686
+    },
+    {
+      "round": 1,
+      "case": 5,
+      "goal": [
+        -4.0,
+        -0.5
+      ],
+      "status": "planned",
+      "odom": [
+        -1.0057,
+        1.0
+      ],
+      "raw_length_m": 4.8527,
+      "output_length_m": 4.5753,
+      "raw_turn_rad": 18.8496,
+      "output_turn_rad": 4.0117,
+      "shadow_records": 1,
+      "shadow": {
+        "legacy_selected_alpha": 1.0,
+        "physical_selected_alpha": 1.0,
+        "physical_decision_matches_legacy": true,
+        "physical_validator_evaluated": true,
+        "physical_max_clearance_loss_m": 0.025,
+        "physical_max_unknown_length_increase_m": 0.0,
+        "legacy_max_allowed_cost": 10.8929,
+        "selected_alpha": 1.0,
+        "selected_path": "candidate",
+        "raw_baseline_valid": true,
+        "raw": {
+          "path_length_m": 4.7471,
+          "cumulative_turn_rad": 9.9043,
+          "min_clearance_m": 0.6964,
+          "p5_clearance_m": 0.7336,
+          "unknown_length_m": 0.15,
+          "unknown_ratio": 0.0316,
+          "mean_cost": 8.8929,
+          "validation_reason": null
+        },
+        "candidates": [
+          {
+            "alpha": 1.0,
+            "legacy_gate_passed": true,
+            "legacy_rejection_reason": null,
+            "path_length_m": 4.5753,
+            "cumulative_turn_rad": 4.0117,
+            "min_clearance_m": 0.6964,
+            "p5_clearance_m": 0.7253,
+            "unknown_length_m": 0.1492,
+            "unknown_ratio": 0.0326,
+            "mean_cost": 10.2796,
+            "validation_reason": null,
+            "physical_gate_passed": true,
+            "physical_rejection_reason": null,
+            "min_clearance_loss_m": 0.0,
+            "unknown_length_increase_m": -0.0008
+          },
+          {
+            "alpha": 0.5,
+            "legacy_gate_passed": true,
+            "legacy_rejection_reason": null,
+            "path_length_m": 4.6476,
+            "cumulative_turn_rad": 6.0589,
+            "min_clearance_m": 0.7159,
+            "p5_clearance_m": 0.7352,
+            "unknown_length_m": 0.1499,
+            "unknown_ratio": 0.0322,
+            "mean_cost": 8.8421,
+            "validation_reason": null,
+            "physical_gate_passed": true,
+            "physical_rejection_reason": null,
+            "min_clearance_loss_m": -0.0195,
+            "unknown_length_increase_m": -0.0001
+          },
+          {
+            "alpha": 0.25,
+            "legacy_gate_passed": true,
+            "legacy_rejection_reason": null,
+            "path_length_m": 4.6906,
+            "cumulative_turn_rad": 8.0368,
+            "min_clearance_m": 0.6964,
+            "p5_clearance_m": 0.7266,
+            "unknown_length_m": 0.15,
+            "unknown_ratio": 0.032,
+            "mean_cost": 8.5773,
+            "validation_reason": null,
+            "physical_gate_passed": true,
+            "physical_rejection_reason": null,
+            "min_clearance_loss_m": 0.0,
+            "unknown_length_increase_m": -0.0
+          },
+          {
+            "alpha": 0.125,
+            "legacy_gate_passed": true,
+            "legacy_rejection_reason": null,
+            "path_length_m": 4.7176,
+            "cumulative_turn_rad": 8.1418,
+            "min_clearance_m": 0.6964,
+            "p5_clearance_m": 0.727,
+            "unknown_length_m": 0.15,
+            "unknown_ratio": 0.0318,
+            "mean_cost": 8.6224,
+            "validation_reason": null,
+            "physical_gate_passed": true,
+            "physical_rejection_reason": null,
+            "min_clearance_loss_m": 0.0,
+            "unknown_length_increase_m": -0.0
+          }
+        ],
+        "timing": {
+          "clearance_transform_ms": 3.4598,
+          "candidate_evaluation_ms": 4.9909,
+          "validator_total_ms": 45.5169
+        }
+      },
+      "planner_latency_ms": 171.26407698378898,
+      "log_bytes": 3701
+    },
+    {
+      "round": 1,
+      "case": 6,
+      "goal": [
+        -4.0,
+        0.5
+      ],
+      "status": "planned",
+      "odom": [
+        -1.0057,
+        1.0
+      ],
+      "raw_length_m": 3.5971,
+      "output_length_m": 3.5014,
+      "raw_turn_rad": 7.854,
+      "output_turn_rad": 2.3778,
+      "shadow_records": 1,
+      "shadow": {
+        "legacy_selected_alpha": 1.0,
+        "physical_selected_alpha": null,
+        "physical_decision_matches_legacy": false,
+        "physical_validator_evaluated": true,
+        "physical_max_clearance_loss_m": 0.025,
+        "physical_max_unknown_length_increase_m": 0.0,
+        "legacy_max_allowed_cost": 23.0575,
+        "selected_alpha": 1.0,
+        "selected_path": "candidate",
+        "raw_baseline_valid": true,
+        "raw": {
+          "path_length_m": 3.5397,
+          "cumulative_turn_rad": 4.977,
+          "min_clearance_m": 1.07,
+          "p5_clearance_m": 1.1314,
+          "unknown_length_m": 0.7624,
+          "unknown_ratio": 0.2154,
+          "mean_cost": 21.0575,
+          "validation_reason": null
+        },
+        "candidates": [
+          {
+            "alpha": 1.0,
+            "legacy_gate_passed": true,
+            "legacy_rejection_reason": null,
+            "path_length_m": 3.5014,
+            "cumulative_turn_rad": 2.3778,
+            "min_clearance_m": 1.07,
+            "p5_clearance_m": 1.0936,
+            "unknown_length_m": 0.7964,
+            "unknown_ratio": 0.2275,
+            "mean_cost": 20.4805,
+            "validation_reason": null,
+            "physical_gate_passed": false,
+            "physical_rejection_reason": "unknown_length_increase",
+            "min_clearance_loss_m": 0.0,
+            "unknown_length_increase_m": 0.034
+          },
+          {
+            "alpha": 0.5,
+            "legacy_gate_passed": true,
+            "legacy_rejection_reason": null,
+            "path_length_m": 3.5139,
+            "cumulative_turn_rad": 4.1352,
+            "min_clearance_m": 1.0817,
+            "p5_clearance_m": 1.1002,
+            "unknown_length_m": 0.7961,
+            "unknown_ratio": 0.2266,
+            "mean_cost": 20.4805,
+            "validation_reason": null,
+            "physical_gate_passed": false,
+            "physical_rejection_reason": "unknown_length_increase",
+            "min_clearance_loss_m": -0.0116,
+            "unknown_length_increase_m": 0.0337
+          },
+          {
+            "alpha": 0.25,
+            "legacy_gate_passed": true,
+            "legacy_rejection_reason": null,
+            "path_length_m": 3.5306,
+            "cumulative_turn_rad": 5.0551,
+            "min_clearance_m": 1.07,
+            "p5_clearance_m": 1.0982,
+            "unknown_length_m": 0.7959,
+            "unknown_ratio": 0.2254,
+            "mean_cost": 20.5385,
+            "validation_reason": null,
+            "physical_gate_passed": false,
+            "physical_rejection_reason": "unknown_length_increase",
+            "min_clearance_loss_m": 0.0,
+            "unknown_length_increase_m": 0.0335
+          },
+          {
+            "alpha": 0.125,
+            "legacy_gate_passed": true,
+            "legacy_rejection_reason": null,
+            "path_length_m": 3.5387,
+            "cumulative_turn_rad": 5.1861,
+            "min_clearance_m": 1.0817,
+            "p5_clearance_m": 1.1059,
+            "unknown_length_m": 0.7958,
+            "unknown_ratio": 0.2249,
+            "mean_cost": 20.5769,
+            "validation_reason": null,
+            "physical_gate_passed": false,
+            "physical_rejection_reason": "unknown_length_increase",
+            "min_clearance_loss_m": -0.0116,
+            "unknown_length_increase_m": 0.0334
+          }
+        ],
+        "timing": {
+          "clearance_transform_ms": 3.0618,
+          "candidate_evaluation_ms": 5.5068,
+          "validator_total_ms": 38.0713
+        }
+      },
+      "planner_latency_ms": 130.66985699697398,
+      "log_bytes": 3504
+    },
+    {
+      "round": 1,
+      "case": 7,
+      "goal": [
+        0.0,
+        4.5
+      ],
+      "status": "planned",
+      "odom": [
+        -1.0057,
+        1.0
+      ],
+      "raw_length_m": 4.7355,
+      "output_length_m": 4.5658,
+      "raw_turn_rad": 14.9226,
+      "output_turn_rad": 2.3143,
+      "shadow_records": 1,
+      "shadow": {
+        "legacy_selected_alpha": 1.0,
+        "physical_selected_alpha": 1.0,
+        "physical_decision_matches_legacy": true,
+        "physical_validator_evaluated": true,
+        "physical_max_clearance_loss_m": 0.025,
+        "physical_max_unknown_length_increase_m": 0.0,
+        "legacy_max_allowed_cost": 35.3832,
+        "selected_alpha": 1.0,
+        "selected_path": "candidate",
+        "raw_baseline_valid": true,
+        "raw": {
+          "path_length_m": 4.6476,
+          "cumulative_turn_rad": 5.5069,
+          "min_clearance_m": 0.0707,
+          "p5_clearance_m": 0.1803,
+          "unknown_length_m": 0.6167,
+          "unknown_ratio": 0.1327,
+          "mean_cost": 33.3832,
+          "validation_reason": null
+        },
+        "candidates": [
+          {
+            "alpha": 1.0,
+            "legacy_gate_passed": true,
+            "legacy_rejection_reason": null,
+            "path_length_m": 4.5658,
+            "cumulative_turn_rad": 2.3143,
+            "min_clearance_m": 0.0707,
+            "p5_clearance_m": 0.1647,
+            "unknown_length_m": 0.6,
+            "unknown_ratio": 0.1314,
+            "mean_cost": 34.6774,
+            "validation_reason": null,
+            "physical_gate_passed": true,
+            "physical_rejection_reason": null,
+            "min_clearance_loss_m": 0.0,
+            "unknown_length_increase_m": -0.0167
+          },
+          {
+            "alpha": 0.5,
+            "legacy_gate_passed": true,
+            "legacy_rejection_reason": null,
+            "path_length_m": 4.5988,
+            "cumulative_turn_rad": 3.9735,
+            "min_clearance_m": 0.0707,
+            "p5_clearance_m": 0.1667,
+            "unknown_length_m": 0.65,
+            "unknown_ratio": 0.1413,
+            "mean_cost": 34.1702,
+            "validation_reason": null,
+            "physical_gate_passed": false,
+            "physical_rejection_reason": "unknown_length_increase",
+            "min_clearance_loss_m": 0.0,
+            "unknown_length_increase_m": 0.0333
+          },
+          {
+            "alpha": 0.25,
+            "legacy_gate_passed": true,
+            "legacy_rejection_reason": null,
+            "path_length_m": 4.618,
+            "cumulative_turn_rad": 4.6574,
+            "min_clearance_m": 0.0707,
+            "p5_clearance_m": 0.1686,
+            "unknown_length_m": 0.7,
+            "unknown_ratio": 0.1516,
+            "mean_cost": 33.7474,
+            "validation_reason": null,
+            "physical_gate_passed": false,
+            "physical_rejection_reason": "unknown_length_increase",
+            "min_clearance_loss_m": 0.0,
+            "unknown_length_increase_m": 0.0833
+          },
+          {
+            "alpha": 0.125,
+            "legacy_gate_passed": true,
+            "legacy_rejection_reason": null,
+            "path_length_m": 4.6311,
+            "cumulative_turn_rad": 4.6948,
+            "min_clearance_m": 0.0707,
+            "p5_clearance_m": 0.1706,
+            "unknown_length_m": 0.65,
+            "unknown_ratio": 0.1404,
+            "mean_cost": 33.6458,
+            "validation_reason": null,
+            "physical_gate_passed": false,
+            "physical_rejection_reason": "unknown_length_increase",
+            "min_clearance_loss_m": 0.0,
+            "unknown_length_increase_m": 0.0333
+          }
+        ],
+        "timing": {
+          "clearance_transform_ms": 3.5873,
+          "candidate_evaluation_ms": 6.3884,
+          "validator_total_ms": 50.4333
+        }
+      },
+      "planner_latency_ms": 189.32430498534814,
+      "log_bytes": 4101
+    },
+    {
+      "round": 1,
+      "case": 8,
+      "goal": [
+        -5.0,
+        4.5
+      ],
+      "status": "planned",
+      "odom": [
+        -1.0057,
+        1.0
+      ],
+      "raw_length_m": 6.0719,
+      "output_length_m": 5.7251,
+      "raw_turn_rad": 25.1327,
+      "output_turn_rad": 2.9784,
+      "shadow_records": 1,
+      "shadow": {
+        "legacy_selected_alpha": 1.0,
+        "physical_selected_alpha": 1.0,
+        "physical_decision_matches_legacy": true,
+        "physical_validator_evaluated": true,
+        "physical_max_clearance_loss_m": 0.025,
+        "physical_max_unknown_length_increase_m": 0.0,
+        "legacy_max_allowed_cost": 10.6204,
+        "selected_alpha": 1.0,
+        "selected_path": "candidate",
+        "raw_baseline_valid": true,
+        "raw": {
+          "path_length_m": 5.9048,
+          "cumulative_turn_rad": 10.672,
+          "min_clearance_m": 1.2298,
+          "p5_clearance_m": 1.4089,
+          "unknown_length_m": 0.5835,
+          "unknown_ratio": 0.0988,
+          "mean_cost": 8.6204,
+          "validation_reason": null
+        },
+        "candidates": [
+          {
+            "alpha": 1.0,
+            "legacy_gate_passed": true,
+            "legacy_rejection_reason": null,
+            "path_length_m": 5.7251,
+            "cumulative_turn_rad": 2.9784,
+            "min_clearance_m": 1.2298,
+            "p5_clearance_m": 1.3809,
+            "unknown_length_m": 0.5497,
+            "unknown_ratio": 0.096,
+            "mean_cost": 10.4359,
+            "validation_reason": null,
+            "physical_gate_passed": true,
+            "physical_rejection_reason": null,
+            "min_clearance_loss_m": 0.0,
+            "unknown_length_increase_m": -0.0338
+          },
+          {
+            "alpha": 0.5,
+            "legacy_gate_passed": true,
+            "legacy_rejection_reason": null,
+            "path_length_m": 5.7998,
+            "cumulative_turn_rad": 6.9995,
+            "min_clearance_m": 1.2298,
+            "p5_clearance_m": 1.4053,
+            "unknown_length_m": 0.5471,
+            "unknown_ratio": 0.0943,
+            "mean_cost": 10.2437,
+            "validation_reason": null,
+            "physical_gate_passed": true,
+            "physical_rejection_reason": null,
+            "min_clearance_loss_m": 0.0,
+            "unknown_length_increase_m": -0.0363
+          },
+          {
+            "alpha": 0.25,
+            "legacy_gate_passed": true,
+            "legacy_rejection_reason": null,
+            "path_length_m": 5.8512,
+            "cumulative_turn_rad": 9.5615,
+            "min_clearance_m": 1.2298,
+            "p5_clearance_m": 1.4089,
+            "unknown_length_m": 0.59,
+            "unknown_ratio": 0.1008,
+            "mean_cost": 9.7521,
+            "validation_reason": null,
+            "physical_gate_passed": false,
+            "physical_rejection_reason": "unknown_length_increase",
+            "min_clearance_loss_m": 0.0,
+            "unknown_length_increase_m": 0.0065
+          },
+          {
+            "alpha": 0.125,
+            "legacy_gate_passed": true,
+            "legacy_rejection_reason": null,
+            "path_length_m": 5.8878,
+            "cumulative_turn_rad": 10.8478,
+            "min_clearance_m": 1.2298,
+            "p5_clearance_m": 1.3765,
+            "unknown_length_m": 0.5879,
+            "unknown_ratio": 0.0998,
+            "mean_cost": 9.9593,
+            "validation_reason": null,
+            "physical_gate_passed": false,
+            "physical_rejection_reason": "unknown_length_increase",
+            "min_clearance_loss_m": 0.0,
+            "unknown_length_increase_m": 0.0044
+          }
+        ],
+        "timing": {
+          "clearance_transform_ms": 3.6721,
+          "candidate_evaluation_ms": 6.725,
+          "validator_total_ms": 58.5529
+        }
+      },
+      "planner_latency_ms": 214.06009601196274,
+      "log_bytes": 3451
+    },
+    {
+      "round": 1,
+      "case": 9,
+      "goal": [
+        -4.0,
+        3.5
+      ],
+      "status": "planned",
+      "odom": [
+        -1.0057,
+        1.0
+      ],
+      "raw_length_m": 4.0355,
+      "output_length_m": 3.9188,
+      "raw_turn_rad": 9.4248,
+      "output_turn_rad": 0.9433,
+      "shadow_records": 1,
+      "shadow": {
+        "legacy_selected_alpha": 1.0,
+        "physical_selected_alpha": 0.5,
+        "physical_decision_matches_legacy": false,
+        "physical_validator_evaluated": true,
+        "physical_max_clearance_loss_m": 0.025,
+        "physical_max_unknown_length_increase_m": 0.0,
+        "legacy_max_allowed_cost": 20.0108,
+        "selected_alpha": 1.0,
+        "selected_path": "candidate",
+        "raw_baseline_valid": true,
+        "raw": {
+          "path_length_m": 3.9839,
+          "cumulative_turn_rad": 5.2267,
+          "min_clearance_m": 0.9434,
+          "p5_clearance_m": 1.0202,
+          "unknown_length_m": 0.3646,
+          "unknown_ratio": 0.0915,
+          "mean_cost": 18.0108,
+          "validation_reason": null
+        },
+        "candidates": [
+          {
+            "alpha": 1.0,
+            "legacy_gate_passed": true,
+            "legacy_rejection_reason": null,
+            "path_length_m": 3.9188,
+            "cumulative_turn_rad": 0.9433,
+            "min_clearance_m": 0.9434,
+            "p5_clearance_m": 1.0296,
+            "unknown_length_m": 0.369,
+            "unknown_ratio": 0.0942,
+            "mean_cost": 19.1728,
+            "validation_reason": null,
+            "physical_gate_passed": false,
+            "physical_rejection_reason": "unknown_length_increase",
+            "min_clearance_loss_m": 0.0,
+            "unknown_length_increase_m": 0.0044
+          },
+          {
+            "alpha": 0.5,
+            "legacy_gate_passed": true,
+            "legacy_rejection_reason": null,
+            "path_length_m": 3.938,
+            "cumulative_turn_rad": 2.4289,
+            "min_clearance_m": 0.9434,
+            "p5_clearance_m": 1.0296,
+            "unknown_length_m": 0.3504,
+            "unknown_ratio": 0.089,
+            "mean_cost": 19.3537,
+            "validation_reason": null,
+            "physical_gate_passed": true,
+            "physical_rejection_reason": null,
+            "min_clearance_loss_m": 0.0,
+            "unknown_length_increase_m": -0.0142
+          },
+          {
+            "alpha": 0.25,
+            "legacy_gate_passed": true,
+            "legacy_rejection_reason": null,
+            "path_length_m": 3.9598,
+            "cumulative_turn_rad": 3.9019,
+            "min_clearance_m": 0.9434,
+            "p5_clearance_m": 1.0306,
+            "unknown_length_m": 0.3841,
+            "unknown_ratio": 0.097,
+            "mean_cost": 18.4512,
+            "validation_reason": null,
+            "physical_gate_passed": false,
+            "physical_rejection_reason": "unknown_length_increase",
+            "min_clearance_loss_m": 0.0,
+            "unknown_length_increase_m": 0.0195
+          },
+          {
+            "alpha": 0.125,
+            "legacy_gate_passed": true,
+            "legacy_rejection_reason": null,
+            "path_length_m": 3.9763,
+            "cumulative_turn_rad": 4.9061,
+            "min_clearance_m": 0.9434,
+            "p5_clearance_m": 1.0296,
+            "unknown_length_m": 0.3559,
+            "unknown_ratio": 0.0895,
+            "mean_cost": 19.0964,
+            "validation_reason": null,
+            "physical_gate_passed": true,
+            "physical_rejection_reason": null,
+            "min_clearance_loss_m": 0.0,
+            "unknown_length_increase_m": -0.0087
+          }
+        ],
+        "timing": {
+          "clearance_transform_ms": 3.624,
+          "candidate_evaluation_ms": 4.5887,
+          "validator_total_ms": 37.7288
+        }
+      },
+      "planner_latency_ms": 152.23938698181883,
+      "log_bytes": 5606
+    },
+    {
+      "round": 1,
+      "case": 10,
+      "goal": [
+        -1.0,
+        3.5
+      ],
+      "status": "planned",
+      "odom": [
+        -1.0057,
+        1.0
+      ],
+      "raw_length_m": 3.2627,
+      "output_length_m": 3.0736,
+      "raw_turn_rad": 15.708,
+      "output_turn_rad": 1.7468,
+      "shadow_records": 1,
+      "shadow": {
+        "legacy_selected_alpha": 1.0,
+        "physical_selected_alpha": 1.0,
+        "physical_decision_matches_legacy": true,
+        "physical_validator_evaluated": true,
+        "physical_max_clearance_loss_m": 0.025,
+        "physical_max_unknown_length_increase_m": 0.0,
+        "legacy_max_allowed_cost": 18.2,
+        "selected_alpha": 1.0,
+        "selected_path": "candidate",
+        "raw_baseline_valid": true,
+        "raw": {
+          "path_length_m": 3.1665,
+          "cumulative_turn_rad": 5.517,
+          "min_clearance_m": 0.75,
+          "p5_clearance_m": 0.8516,
+          "unknown_length_m": 0.4294,
+          "unknown_ratio": 0.1356,
+          "mean_cost": 16.2,
+          "validation_reason": null
+        },
+        "candidates": [
+          {
+            "alpha": 1.0,
+            "legacy_gate_passed": true,
+            "legacy_rejection_reason": null,
+            "path_length_m": 3.0736,
+            "cumulative_turn_rad": 1.7468,
+            "min_clearance_m": 0.75,
+            "p5_clearance_m": 0.8407,
+            "unknown_length_m": 0.426,
+            "unknown_ratio": 0.1386,
+            "mean_cost": 17.0,
+            "validation_reason": null,
+            "physical_gate_passed": true,
+            "physical_rejection_reason": null,
+            "min_clearance_loss_m": 0.0,
+            "unknown_length_increase_m": -0.0034
+          },
+          {
+            "alpha": 0.5,
+            "legacy_gate_passed": true,
+            "legacy_rejection_reason": null,
+            "path_length_m": 3.1109,
+            "cumulative_turn_rad": 3.8031,
+            "min_clearance_m": 0.75,
+            "p5_clearance_m": 0.8646,
+            "unknown_length_m": 0.438,
+            "unknown_ratio": 0.1408,
+            "mean_cost": 16.2188,
+            "validation_reason": null,
+            "physical_gate_passed": false,
+            "physical_rejection_reason": "unknown_length_increase",
+            "min_clearance_loss_m": 0.0,
+            "unknown_length_increase_m": 0.0086
+          },
+          {
+            "alpha": 0.25,
+            "legacy_gate_passed": true,
+            "legacy_rejection_reason": null,
+            "path_length_m": 3.1364,
+            "cumulative_turn_rad": 4.937,
+            "min_clearance_m": 0.75,
+            "p5_clearance_m": 0.8651,
+            "unknown_length_m": 0.4427,
+            "unknown_ratio": 0.1412,
+            "mean_cost": 15.9077,
+            "validation_reason": null,
+            "physical_gate_passed": false,
+            "physical_rejection_reason": "unknown_length_increase",
+            "min_clearance_loss_m": 0.0,
+            "unknown_length_increase_m": 0.0133
+          },
+          {
+            "alpha": 0.125,
+            "legacy_gate_passed": true,
+            "legacy_rejection_reason": null,
+            "path_length_m": 3.1482,
+            "cumulative_turn_rad": 5.0993,
+            "min_clearance_m": 0.75,
+            "p5_clearance_m": 0.8342,
+            "unknown_length_m": 0.4259,
+            "unknown_ratio": 0.1353,
+            "mean_cost": 15.6667,
+            "validation_reason": null,
+            "physical_gate_passed": true,
+            "physical_rejection_reason": null,
+            "min_clearance_loss_m": 0.0,
+            "unknown_length_increase_m": -0.0036
+          }
+        ],
+        "timing": {
+          "clearance_transform_ms": 3.3426,
+          "candidate_evaluation_ms": 4.4218,
+          "validator_total_ms": 34.4454
+        }
+      },
+      "planner_latency_ms": 132.80511400080286,
+      "log_bytes": 3638
+    }
+  ]
+}

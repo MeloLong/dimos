@@ -924,6 +924,79 @@ stage. This isolates the effect of replacing an opaque map-cost allowance with
 quantities that can be related to map resolution, footprint uncertainty,
 localization error, and measured tracking error.
 
+###### Stage 2 Shadow Result (2026-07-17)
+
+Implementation is complete in shadow mode. The online and offline paths share
+one physical policy: hard-reject lethal/out-of-bounds candidates, bound
+relative minimum-clearance loss, forbid configured unknown-length increase,
+and select the largest passing alpha. Logs now contain legacy and physical
+alphas, per-candidate decisions/reasons, thresholds, full physical metrics,
+decision match, and distance-transform/candidate/total timing. The
+authoritative switch exists for isolated tests but remains default `false`.
+
+Completed checklist:
+
+- [x] replay 0.000/0.010/0.020/0.025/0.030/0.050 m clearance limits against
+  0.000/0.005/0.010 m unknown allowances;
+- [x] run physical shadow without changing the legacy controller path;
+- [x] cover office startup/stable/dynamic phases, unknown boundaries,
+  unknown-cut candidates, 0.95/1.00/1.20 m corridors, and straight/turn/S/V
+  paths;
+- [x] retain 316 race-free successful plans, with 129 live physical-shadow
+  plans and 187 saved plans used for exact offline replay;
+- [x] verify one shadow per successful plan, 0.0001 m maximum qualified drift,
+  zero selected policy violations, and zero runtime planner exceptions;
+- [x] compare 50 shadow-off and 50 shadow-on plans with process-tree CPU/RSS,
+  log volume, and validator timing;
+- [ ] measure real localization and path-tracking error;
+- [ ] resolve raw A* paths that fail continuous post-sampling validation;
+- [ ] reduce or formally accept the >20% physical raw-fallback rate;
+- [ ] authorize physical selection in live control.
+
+![Stage 2 scenario coverage](validation/candidate-validator-shadow/2026-07-17/stage2-scenario-coverage.svg)
+
+| Qualified result | Value |
+|---|---:|
+| Successful plans | 316 |
+| Live physical-shadow plans | 129 |
+| Physical alpha 1.0 / 0.5 / 0.25 / 0.125 | 67 / 23 / 2 / 3 |
+| Physical raw fallback | 34 / 129 (26.4%) |
+| Legacy/physical match | 83 / 129 (64.3%) |
+| Selected lethal/out-of-bounds violations | 0 |
+| Selected clearance violations | 0 |
+| Selected unknown-length violations | 0 |
+| Static repeated decision consistency | 5 / 5 goals (100%) |
+| Successful-plan/shadow match | 100% |
+| Maximum qualified odometry drift | 0.0001 m |
+| Qualified runtime planner exceptions | 0 |
+
+At strict zero unknown increase, the 187-plan replay produced the same 26 raw
+fallbacks (13.9%) for both 0.020 m and 0.025 m clearance limits. The qualified
+live set produced 34/129 raw fallbacks (26.4%); 227 candidate rejections came
+from unknown-length increase. Therefore current evidence does **not** establish
+0.025 m as a production threshold and does not justify weakening the unknown
+rule merely to improve acceptance.
+
+The generated 0.9 m-envelope scene used 1.1 inflation and 0.05 m cells. The
+0.95 m and 1.00 m corridors repeatedly exposed `raw_baseline_invalid`: grid A*
+emitted a route whose continuous post-sampling touched a lethal cell. The 1.20
+m corridor and wide straight/turn/S/V region planned successfully. Invalid raw
+paths now receive an explicit shadow record, but authoritative fallback cannot
+be enabled until the planner rejects or repairs them before LocalPlanner.
+
+Clean A/B testing measured planner P95 at 360.3 ms with physical shadow off and
+389.4 ms with it on, an 8.1% increase below the 20% goal. CPU and peak RSS did
+not regress; median log volume increased 5.9%. On byte-identical saved metrics,
+the physical comparison itself measured 1.5 us P50 and 2.33 us P95, confirming
+that path sampling and distance-transform work dominate.
+
+**Decision:** keep physical validation shadow-only and keep 0.025 m
+provisional. The next phase remains validator/raw-path contract work: define
+the operational unknown policy, prevent invalid raw fallback, and add real
+localization/tracking error. Turn-aware A* remains deferred until these safety
+contracts pass. Full evidence is under
+`docs/development/validation/candidate-validator-shadow/2026-07-17/`.
+
 ##### Stage 3: Reduce Macro Bends In Raw A*
 
 After candidate validation is stable, extend A* state from `(x, y)` to

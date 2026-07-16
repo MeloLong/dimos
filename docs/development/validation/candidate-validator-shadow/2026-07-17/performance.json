@@ -1,0 +1,102 @@
+{
+  "plans_per_group": 50,
+  "planner_latency_ms": {
+    "off": {
+      "min": 189.9693,
+      "p05": 199.9039,
+      "median": 280.638,
+      "p95": 360.255,
+      "max": 502.1077
+    },
+    "on": {
+      "min": 171.0861,
+      "p05": 178.4506,
+      "median": 308.5419,
+      "p95": 389.4246,
+      "max": 545.9575
+    }
+  },
+  "p95_overhead_percent": 8.097,
+  "exact_snapshot_physical_policy_us": {
+    "p50": 1.5,
+    "p95": 2.333,
+    "max": 65.708
+  },
+  "exact_snapshot_selection_counts": {
+    "0.5": 7,
+    "1.0": 20,
+    "raw": 23
+  },
+  "distance_transform_ms": {
+    "off": {
+      "p50": 1.6754,
+      "p95": 2.2231,
+      "max": 2.5823
+    },
+    "on": {
+      "p50": 1.6494,
+      "p95": 2.1549,
+      "max": 2.544
+    }
+  },
+  "candidate_evaluation_ms": {
+    "off": {
+      "p50": 9.2887,
+      "p95": 12.5429,
+      "max": 15.4944
+    },
+    "on": {
+      "p50": 10.3511,
+      "p95": 14.1881,
+      "max": 16.6007
+    }
+  },
+  "validator_total_ms": {
+    "off": {
+      "p50": 78.3053,
+      "p95": 99.4208,
+      "max": 118.5389
+    },
+    "on": {
+      "p50": 84.7703,
+      "p95": 106.7217,
+      "max": 107.5236
+    }
+  },
+  "resources": {
+    "off": {
+      "root_pid": 1115806,
+      "elapsed_s": 55.8642,
+      "average_cpu_cores": 3.7172,
+      "start_rss_mb": 4894.316,
+      "end_rss_mb": 4992.98,
+      "peak_sampled_rss_mb": 4992.98,
+      "peak_processes": 19
+    },
+    "on": {
+      "root_pid": 1110295,
+      "elapsed_s": 56.2017,
+      "average_cpu_cores": 3.6931,
+      "start_rss_mb": 4873.191,
+      "end_rss_mb": 4949.594,
+      "peak_sampled_rss_mb": 4971.828,
+      "peak_processes": 19
+    }
+  },
+  "log_bytes_per_case": {
+    "off": {
+      "min": 2812.0,
+      "p05": 2815.25,
+      "median": 3678.5,
+      "p95": 5228.8,
+      "max": 5853.0
+    },
+    "on": {
+      "min": 3316.0,
+      "p05": 3321.0,
+      "median": 3894.0,
+      "p95": 5546.1,
+      "max": 6106.0
+    }
+  }
+}

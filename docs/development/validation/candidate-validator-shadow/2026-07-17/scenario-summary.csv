@@ -1,0 +1,6 @@
+scenario,physical_shadow,requests,successful_plans,no_path_or_timeout,raw_baseline_invalid,shadow_record_mismatch,max_odom_drift_m
+historical-dynamic,False,147,85,62,0,0,0.0
+historical-static,False,147,102,45,0,0,0.0
+race-fix-smoke,True,10,9,1,0,0,0.0001
+office-clean-final,True,72,70,1,1,0,0.0
+narrow-clean-shadow-on,True,50,50,0,0,0,0.0

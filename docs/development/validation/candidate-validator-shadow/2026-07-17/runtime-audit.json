@@ -1,0 +1,31 @@
+{
+  "qualified_logs": [
+    {
+      "log": "/tmp/m20_stage2_race_smoke.log",
+      "covers": ["race-fix-smoke", "clean-office-final-3x"],
+      "local_planner_errors": 0,
+      "planner_thread_exceptions": 0,
+      "uncaught_exceptions": 0
+    },
+    {
+      "log": "/tmp/m20_stage2_clean_narrow_on.log",
+      "covers": ["clean-performance-shadow-on"],
+      "local_planner_errors": 0,
+      "planner_thread_exceptions": 0,
+      "uncaught_exceptions": 0
+    },
+    {
+      "log": "/tmp/m20_stage2_clean_narrow_off.log",
+      "covers": ["clean-performance-shadow-off"],
+      "local_planner_errors": 0,
+      "planner_thread_exceptions": 0,
+      "uncaught_exceptions": 0
+    }
+  ],
+  "audit_patterns": [
+    "Error in local planning",
+    "Exception in thread",
+    "Uncaught exception"
+  ],
+  "qualified_runtime_exception_total": 0
+}

@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="310" viewBox="0 0 960 310" role="img" aria-labelledby="title desc">
+<title id="title">Successful planning evidence by scenario</title>
+<desc id="desc">Horizontal bar chart with values labeled on every bar.</desc>
+<style>text{font:14px sans-serif;fill:#20262d} rect{fill:#2f7d71} .title{font-size:20px;font-weight:500}</style>
+<text class="title" x="24" y="32">Successful planning evidence by scenario</text>
+<text x="248" y="75" text-anchor="end">historical-dynamic</text><rect x="260" y="58" width="516.67" height="24" rx="2"/><text x="784.67" y="75">85.0</text><text x="248" y="119" text-anchor="end">historical-static</text><rect x="260" y="102" width="620.00" height="24" rx="2"/><text x="888.00" y="119">102.0</text><text x="248" y="163" text-anchor="end">race-fix-smoke</text><rect x="260" y="146" width="54.71" height="24" rx="2"/><text x="322.71" y="163">9.0</text><text x="248" y="207" text-anchor="end">office-clean-final</text><rect x="260" y="190" width="425.49" height="24" rx="2"/><text x="693.49" y="207">70.0</text><text x="248" y="251" text-anchor="end">narrow-clean-shadow-on</text><rect x="260" y="234" width="303.92" height="24" rx="2"/><text x="571.92" y="251">50.0</text>
+</svg>

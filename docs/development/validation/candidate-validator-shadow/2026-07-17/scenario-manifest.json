@@ -7,7 +7,7 @@
     "effective_width_m": 0.99,
     "costmap_resolution_m": 0.05
   },
-  "runs": [
+  "exploratory_runs": [
     {
       "scenario": "office-map-initialization",
       "phase": "startup",
@@ -44,6 +44,38 @@
       "initial_wait_s": 20,
       "corridor_widths_m": [0.95, 1.0, 1.2],
       "expected": ["not traversable", "critical", "comfortable"]
+    }
+  ],
+  "qualified_runs": [
+    {
+      "report": "../2026-07-16/dynamic-3x-report.json",
+      "successful_plans": 85,
+      "mode": "Stage 1 metrics plus offline physical replay"
+    },
+    {
+      "report": "../2026-07-16/static-clean-3x-report.json",
+      "successful_plans": 102,
+      "mode": "Stage 1 metrics plus offline physical replay"
+    },
+    {
+      "report": "race-fix-smoke/report.json",
+      "successful_plans": 9,
+      "mode": "physical shadow on"
+    },
+    {
+      "report": "clean-office-final-3x/report.json",
+      "successful_plans": 70,
+      "mode": "physical shadow on"
+    },
+    {
+      "report": "clean-performance-shadow-on/report.json",
+      "successful_plans": 50,
+      "mode": "physical shadow on"
+    },
+    {
+      "report": "clean-performance-shadow-off/report.json",
+      "successful_plans": 50,
+      "mode": "performance control; not part of 316 physical evidence total"
     }
   ]
 }

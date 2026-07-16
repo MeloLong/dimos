@@ -1,0 +1,42 @@
+{
+  "excluded_runs": [
+    {
+      "runs": [
+        "office-phase1-smoke",
+        "office-phase1-stable-clean",
+        "office-phase2",
+        "office-phase3",
+        "narrow-15x",
+        "performance-shadow-on",
+        "performance-shadow-off",
+        "clean-office-3x"
+      ],
+      "reason": "pre-fix cancellation race produced LocalPlanner exceptions"
+    },
+    {
+      "run": "office-phase1-stable",
+      "reason": "pre-pose-hold-fix final-goal control gap",
+      "max_odom_drift_m": 0.0313
+    }
+  ],
+  "raw_baseline_invalid": {
+    "report": "narrow-invalid-10x/report.json",
+    "count": 20,
+    "goals": [
+      [
+        10.0,
+        1.5
+      ],
+      [
+        10.0,
+        4.0
+      ]
+    ]
+  },
+  "startup_failures": [
+    "isolated worktree initially lacked untracked native build outputs",
+    "CLI list override for disabled moving obstacle failed Pydantic validation"
+  ],
+  "test_data_blocker": "five historical tests require unavailable private LFS credentials",
+  "uncaught_runtime_exceptions_in_valid_runs": 0
+}

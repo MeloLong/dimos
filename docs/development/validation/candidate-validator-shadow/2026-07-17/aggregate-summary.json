@@ -1,0 +1,83 @@
+{
+  "successful_plans": 316,
+  "live_stage2_physical_plans": 129,
+  "physical_selection_counts": {
+    "0.125": 3,
+    "0.25": 2,
+    "0.5": 23,
+    "1.0": 67,
+    "raw": 34
+  },
+  "physical_raw_fallback_count": 34,
+  "physical_raw_fallback_ratio": 0.26356589147286824,
+  "legacy_physical_matches": 83,
+  "legacy_physical_match_ratio": 0.6434108527131783,
+  "physical_rejection_reasons": {
+    "lethal_cell": 60,
+    "unknown_length_increase": 227
+  },
+  "selected_policy_violations": 0,
+  "selected_hard_violations": 0,
+  "selected_clearance_violations": 0,
+  "selected_unknown_violations": 0,
+  "successful_shadow_match_ratio": 1.0,
+  "max_qualified_odom_drift_m": 0.0001,
+  "static_decision_consistency": {
+    "consistent_goals": 5,
+    "goals": 5,
+    "ratio": 1.0
+  },
+  "performance_p95_overhead_percent": 8.097,
+  "scenario_rows": [
+    {
+      "scenario": "historical-dynamic",
+      "physical_shadow": false,
+      "requests": 147,
+      "successful_plans": 85,
+      "no_path_or_timeout": 62,
+      "raw_baseline_invalid": 0,
+      "shadow_record_mismatch": 0,
+      "max_odom_drift_m": 0.0
+    },
+    {
+      "scenario": "historical-static",
+      "physical_shadow": false,
+      "requests": 147,
+      "successful_plans": 102,
+      "no_path_or_timeout": 45,
+      "raw_baseline_invalid": 0,
+      "shadow_record_mismatch": 0,
+      "max_odom_drift_m": 0.0
+    },
+    {
+      "scenario": "race-fix-smoke",
+      "physical_shadow": true,
+      "requests": 10,
+      "successful_plans": 9,
+      "no_path_or_timeout": 1,
+      "raw_baseline_invalid": 0,
+      "shadow_record_mismatch": 0,
+      "max_odom_drift_m": 0.0001
+    },
+    {
+      "scenario": "office-clean-final",
+      "physical_shadow": true,
+      "requests": 72,
+      "successful_plans": 70,
+      "no_path_or_timeout": 1,
+      "raw_baseline_invalid": 1,
+      "shadow_record_mismatch": 0,
+      "max_odom_drift_m": 0.0
+    },
+    {
+      "scenario": "narrow-clean-shadow-on",
+      "physical_shadow": true,
+      "requests": 50,
+      "successful_plans": 50,
+      "no_path_or_timeout": 0,
+      "raw_baseline_invalid": 0,
+      "shadow_record_mismatch": 0,
+      "max_odom_drift_m": 0.0
+    }
+  ]
+}
