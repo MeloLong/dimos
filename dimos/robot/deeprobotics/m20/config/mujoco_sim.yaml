@@ -52,6 +52,34 @@ m20mujocosimconnection:
   # Open3D voxel size used to downsample the merged point cloud, in metres.
   pointcloud_voxel_size: 0.05
 
+m20movingobstacle:
+  # Enable one person-shaped mocap obstacle in m20-true-simple-nav-sim.
+  enabled: true
+
+  # Fixed seed keeps pseudo-random route choices reproducible across test runs.
+  seed: 20
+
+  # Obstacle ground speed in metres per second. Keep low relative to the 2 Hz point cloud.
+  speed_mps: 0.15
+
+  # Pose publication rate. This controls visual smoothness, not point-cloud frequency.
+  update_hz: 20.0
+
+  # Start away from the default robot spawn at (-1, 1).
+  initial_waypoint_index: 0
+
+  # Ground-level mocap position expected by the existing person mesh.
+  z_m: 0.0
+
+  # Validated office path from the existing MuJoCo person-follow scenarios.
+  # At each point the obstacle randomly chooses the previous or next edge.
+  waypoints:
+    - [-3.35, -0.51]
+    - [-2.60, 1.28]
+    - [4.80, 0.21]
+    - [4.14, -6.00]
+    - [0.59, -3.79]
+
 mlsplannernative:
   # Vertical planning envelope, in metres. Includes margin above the nominal 0.373 m Go1 visual height.
   robot_height: 0.5

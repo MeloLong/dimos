@@ -40,6 +40,10 @@ from dimos.robot.deeprobotics.m20.mujoco_sim import (
     M20MujocoSimConfig,
     M20MujocoSimConnection,
 )
+from dimos.robot.deeprobotics.m20.nav.moving_obstacle import (
+    M20MovingObstacle,
+    M20MovingObstacleConfig,
+)
 from dimos.robot.deeprobotics.m20.tf import M20TF
 
 voxel_size = 0.05
@@ -57,22 +61,32 @@ map_save_path = map_save_dir / "m20_accumulated_map.pcd"
 M20_MUJOCO_SIM_CONFIG_PATH = Path(__file__).resolve().parents[1] / "config/mujoco_sim.yaml"
 
 
-def _load_m20_mujoco_sim_config() -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+def _load_m20_mujoco_sim_config() -> tuple[
+    dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any]
+]:
     payload = yaml.safe_load(M20_MUJOCO_SIM_CONFIG_PATH.read_text(encoding="utf-8"))
     connection_values = payload["m20mujocosimconnection"]
+    obstacle_values = payload["m20movingobstacle"]
     envelope_values = payload["mlsplannernative"]
     planner_values = payload["replanningastarplanner"]
     connection_config = M20MujocoSimConfig.model_validate(connection_values)
+    obstacle_config = M20MovingObstacleConfig.model_validate(obstacle_values)
     envelope_config = MLSPlannerNativeConfig.model_validate(envelope_values)
     planner_config = ReplanningAStarPlannerConfig.model_validate(planner_values)
     return (
         connection_config.model_dump(include=set(connection_values)),
+        obstacle_config.model_dump(include=set(obstacle_values)),
         envelope_config.model_dump(include=set(envelope_values)),
         planner_config.model_dump(include=set(planner_values)),
     )
 
 
-M20_MUJOCO_SIM_CONFIG, GO1_MUJOCO_ENVELOPE, M20_SIM_PLANNER_CONFIG = _load_m20_mujoco_sim_config()
+(
+    M20_MUJOCO_SIM_CONFIG,
+    M20_MOVING_OBSTACLE_CONFIG,
+    GO1_MUJOCO_ENVELOPE,
+    M20_SIM_PLANNER_CONFIG,
+) = _load_m20_mujoco_sim_config()
 
 _m20_slam_ray_tracer = RayTracingVoxelMap.blueprint(
     voxel_size=voxel_size,
@@ -160,6 +174,7 @@ m20_true_simple_nav_sim = autoconnect(
             (M20MujocoSimConnection, "slam_aligned_points", "dimos/slam_aligned_points"),
         ]
     ),
+    M20MovingObstacle.blueprint(**M20_MOVING_OBSTACLE_CONFIG),
     M20TF.blueprint().remappings([(M20TF, "odometry", "dimos/slam_odom")]),
 ).global_config(
     n_workers=11,

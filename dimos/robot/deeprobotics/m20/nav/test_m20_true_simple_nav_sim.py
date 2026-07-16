@@ -9,6 +9,10 @@ from dimos.robot.deeprobotics.m20.nav.m20_true_simple_nav import (
     m20_true_simple_nav,
     m20_true_simple_nav_sim,
 )
+from dimos.robot.deeprobotics.m20.nav.moving_obstacle import (
+    M20MovingObstacle,
+    M20MovingObstacleConfig,
+)
 
 
 def _modules(blueprint):
@@ -23,6 +27,8 @@ def test_true_simple_nav_real_and_sim_connections_are_isolated() -> None:
     assert M20MujocoSimConnection not in real_modules
     assert M20MujocoSimConnection in sim_modules
     assert M20Connection not in sim_modules
+    assert M20MovingObstacle in sim_modules
+    assert M20MovingObstacle not in real_modules
 
 
 def test_true_simple_nav_sim_feeds_m20_slam_topics() -> None:
@@ -85,3 +91,14 @@ def test_true_simple_nav_sim_loads_checked_in_sensor_profile() -> None:
     )
 
     assert simulator.kwargs == expected
+
+
+def test_true_simple_nav_sim_loads_checked_in_moving_obstacle_profile() -> None:
+    payload = yaml.safe_load(M20_MUJOCO_SIM_CONFIG_PATH.read_text(encoding="utf-8"))
+    values = payload["m20movingobstacle"]
+    expected = M20MovingObstacleConfig.model_validate(values).model_dump(include=set(values))
+    obstacle = next(
+        atom for atom in m20_true_simple_nav_sim.blueprints if atom.module is M20MovingObstacle
+    )
+
+    assert obstacle.kwargs == expected
