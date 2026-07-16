@@ -1,0 +1,49 @@
+{
+  "date": "2026-07-17",
+  "baseline_successful_plans": 187,
+  "robot_envelope": {
+    "robot_width_m": 0.9,
+    "planner_inflation_factor": 1.1,
+    "effective_width_m": 0.99,
+    "costmap_resolution_m": 0.05
+  },
+  "runs": [
+    {
+      "scenario": "office-map-initialization",
+      "phase": "startup",
+      "goals_file": "office-targeted-goals.json",
+      "rounds": 1,
+      "initial_wait_s": 0
+    },
+    {
+      "scenario": "office-dynamic-person",
+      "phase": "phase-1",
+      "goals_file": "office-targeted-goals.json",
+      "rounds": 2,
+      "initial_wait_s": 10
+    },
+    {
+      "scenario": "office-dynamic-person",
+      "phase": "phase-2-after-restart",
+      "goals_file": "office-targeted-goals.json",
+      "rounds": 1,
+      "initial_wait_s": 20
+    },
+    {
+      "scenario": "office-dynamic-person",
+      "phase": "phase-3-after-restart",
+      "goals_file": "office-targeted-goals.json",
+      "rounds": 1,
+      "initial_wait_s": 30
+    },
+    {
+      "scenario": "generated-narrow-passages",
+      "phase": "stable-static",
+      "goals_file": "narrow-targeted-goals.json",
+      "rounds": 15,
+      "initial_wait_s": 20,
+      "corridor_widths_m": [0.95, 1.0, 1.2],
+      "expected": ["not traversable", "critical", "comfortable"]
+    }
+  ]
+}

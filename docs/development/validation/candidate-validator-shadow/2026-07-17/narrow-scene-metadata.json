@@ -1,0 +1,31 @@
+{
+  "resolution_m": 0.05,
+  "shape": [
+    200,
+    240
+  ],
+  "robot_start": [
+    1.5,
+    4.0
+  ],
+  "planning_robot_width_m": 0.9,
+  "planning_inflation_factor": 1.1,
+  "effective_planning_width_m": 0.99,
+  "corridors": [
+    {
+      "name": "blocked_0.95m",
+      "center_y_m": 1.5,
+      "width_m": 0.95
+    },
+    {
+      "name": "critical_1.00m",
+      "center_y_m": 4.0,
+      "width_m": 1.0
+    },
+    {
+      "name": "generous_1.20m",
+      "center_y_m": 6.5,
+      "width_m": 1.2
+    }
+  ]
+}

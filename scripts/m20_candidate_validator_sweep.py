@@ -188,7 +188,9 @@ def _summarize(cases: list[dict[str, Any]], initial_odom: tuple[float, float]) -
     return {
         "cases": len(cases),
         "planned": len(successful),
-        "no_path_or_timeout": len(cases) - len(successful),
+        "status_counts": dict(sorted(Counter(case["status"] for case in cases).items())),
+        "no_path_or_timeout": sum(case["status"] == "no_path_or_timeout" for case in cases),
+        "shadow_record_mismatch": sum(case["status"] == "shadow_record_mismatch" for case in cases),
         "selection_counts": dict(sorted(selections.items())),
         "physical_selection_counts": dict(sorted(physical_selections.items())),
         "physical_decision_matches": physical_decision_matches,
@@ -205,6 +207,14 @@ def _arguments() -> argparse.Namespace:
     parser.add_argument("--rounds", type=int, default=3)
     parser.add_argument("--goal-timeout-s", type=float, default=1.5)
     parser.add_argument("--settle-s", type=float, default=0.15)
+    parser.add_argument("--initial-wait-s", type=float, default=0.0)
+    parser.add_argument("--scenario", default="default-grid")
+    parser.add_argument("--phase", default="unspecified")
+    parser.add_argument(
+        "--goals-file",
+        type=Path,
+        help="JSON array of [x, y] goals; defaults to the historical 49-goal grid",
+    )
     parser.add_argument(
         "--log",
         type=Path,
@@ -225,8 +235,10 @@ def _arguments() -> argparse.Namespace:
     args = parser.parse_args()
     if args.rounds < 1:
         parser.error("--rounds must be at least 1")
-    if args.goal_timeout_s <= 0 or args.settle_s < 0:
+    if args.goal_timeout_s <= 0 or args.settle_s < 0 or args.initial_wait_s < 0:
         parser.error("timeouts must be positive and settle time non-negative")
+    if args.goals_file is not None and not args.goals_file.is_file():
+        parser.error(f"goals file not found: {args.goals_file}")
     return args
 
 
@@ -236,6 +248,12 @@ def main() -> None:
         raise SystemExit(f"Simulation log not found: {args.log}")
 
     transport = lcm.LCM()
+    goals = DEFAULT_GOALS
+    if args.goals_file is not None:
+        payload = json.loads(args.goals_file.read_text(encoding="utf-8"))
+        goals = [(float(goal[0]), float(goal[1])) for goal in payload]
+        if not goals:
+            raise SystemExit("Goals file must contain at least one [x, y] goal")
     latest_odom: Odometry | None = None
     latest_raw: NavPath | None = None
     latest_path: NavPath | None = None
@@ -269,6 +287,8 @@ def main() -> None:
         transport.handle_timeout(100)
     if latest_odom is None:
         raise SystemExit("No simulation odometry received")
+    if args.initial_wait_s:
+        time.sleep(args.initial_wait_s)
 
     args.output.mkdir(parents=True, exist_ok=True)
     initial_odom = (latest_odom.x, latest_odom.y)
@@ -276,7 +296,7 @@ def main() -> None:
     print(f"initial_odom=({initial_odom[0]:.3f}, {initial_odom[1]:.3f})")
 
     for round_index in range(1, args.rounds + 1):
-        for goal_index, (goal_x, goal_y) in enumerate(DEFAULT_GOALS, 1):
+        for goal_index, (goal_x, goal_y) in enumerate(goals, 1):
             before_raw = raw_sequence
             before_path = path_sequence
             log_offset = args.log.stat().st_size
@@ -319,6 +339,15 @@ def main() -> None:
                     "odom": None if odom is None else [round(odom.x, 4), round(odom.y, 4)],
                     "shadow_records": len(shadow_records),
                 }
+            elif len(shadow_records) != 1:
+                result = {
+                    "round": round_index,
+                    "case": goal_index,
+                    "goal": [goal_x, goal_y],
+                    "status": "shadow_record_mismatch",
+                    "odom": [round(odom.x, 4), round(odom.y, 4)],
+                    "shadow_records": len(shadow_records),
+                }
             else:
                 result = {
                     "round": round_index,
@@ -350,8 +379,12 @@ def main() -> None:
     report = {
         "created_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
         "hold_position": args.hold_position,
+        "scenario": args.scenario,
+        "phase": args.phase,
+        "initial_wait_s": args.initial_wait_s,
+        "goals_file": None if args.goals_file is None else str(args.goals_file),
         "rounds": args.rounds,
-        "goals_per_round": len(DEFAULT_GOALS),
+        "goals_per_round": len(goals),
         "initial_odom": list(initial_odom),
         "summary": _summarize(cases, initial_odom),
         "cases": cases,
