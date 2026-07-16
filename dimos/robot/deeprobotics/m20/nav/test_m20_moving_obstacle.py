@@ -5,6 +5,8 @@ import mujoco
 from pydantic import ValidationError
 import pytest
 
+from dimos.msgs.geometry_msgs.Pose import Pose
+from dimos.msgs.nav_msgs.Odometry import Odometry
 from dimos.robot.deeprobotics.m20.nav.moving_obstacle import (
     M20MovingObstacle,
     M20MovingObstacleConfig,
@@ -51,6 +53,124 @@ def test_random_walk_pose_has_unit_quaternion() -> None:
     )
 
 
+def test_random_walk_redirect_stays_on_current_edge() -> None:
+    walker = RandomWaypointWalk(_config(seed=1, speed_mps=1.0))
+    initial_target = walker.target_position
+    walker.step(0.25)
+
+    assert walker.redirect_away_from(initial_target) is True
+    redirected_target = walker.target_position
+
+    assert redirected_target == (0.0, 0.0)
+    assert walker.position[0] == pytest.approx(0.25 * initial_target[0])
+    assert walker.position[1] == pytest.approx(0.25 * initial_target[1])
+
+
+def test_random_walk_holds_when_no_adjacent_edge_increases_separation() -> None:
+    walker = RandomWaypointWalk(_config(initial_waypoint_index=0))
+
+    redirected = walker.redirect_away_from((0.5, 0.5))
+
+    assert redirected is False
+    assert walker.position == (0.0, 0.0)
+
+
+def _avoidance_obstacle(config: M20MovingObstacleConfig) -> M20MovingObstacle:
+    with patch(
+        "dimos.robot.deeprobotics.m20.nav.moving_obstacle.Module.__init__",
+        autospec=True,
+    ) as module_init:
+        module_init.return_value = None
+        obstacle = M20MovingObstacle(**config.model_dump())
+    obstacle.config = config
+    obstacle._walker = RandomWaypointWalk(config)
+    obstacle._avoidance_state = "normal"
+    obstacle._pause_remaining_s = 0.0
+    return obstacle
+
+
+def test_proximity_avoidance_pauses_then_moves_away() -> None:
+    config = _config(
+        seed=1,
+        speed_mps=0.2,
+        update_hz=10.0,
+        proximity_stop_distance_m=0.5,
+        proximity_resume_distance_m=0.8,
+        proximity_pause_s=0.2,
+    )
+    obstacle = _avoidance_obstacle(config)
+    assert obstacle._walker is not None
+    target = obstacle._walker.target_position
+    obstacle._walker.step(1.0)
+    obstacle._robot_position = (target[0] * 0.5, target[1] * 0.5)
+    start = obstacle._walker.position
+
+    first = obstacle._next_pose(0.1)
+    second = obstacle._next_pose(0.1)
+    third = obstacle._next_pose(0.1)
+
+    assert first.position.to_tuple()[:2] == pytest.approx(start)
+    assert second.position.to_tuple()[:2] == pytest.approx(start)
+    assert obstacle._avoidance_state == "retreat"
+    assert math.dist(third.position.to_tuple()[:2], obstacle._robot_position) > math.dist(
+        start, obstacle._robot_position
+    )
+
+
+def test_proximity_avoidance_uses_resume_hysteresis() -> None:
+    config = _config(
+        seed=1,
+        speed_mps=0.2,
+        update_hz=10.0,
+        proximity_stop_distance_m=0.5,
+        proximity_resume_distance_m=0.8,
+        proximity_pause_s=0.0,
+    )
+    obstacle = _avoidance_obstacle(config)
+    assert obstacle._walker is not None
+    target = obstacle._walker.target_position
+    obstacle._walker.step(1.0)
+    obstacle._robot_position = (target[0] * 0.5, target[1] * 0.5)
+
+    obstacle._next_pose(0.1)
+    assert obstacle._avoidance_state == "retreat"
+
+    for _ in range(8):
+        previous_distance = math.dist(obstacle._walker.position, obstacle._robot_position)
+        obstacle._next_pose(0.1)
+        current_distance = math.dist(obstacle._walker.position, obstacle._robot_position)
+        assert current_distance > previous_distance
+        assert obstacle._avoidance_state == "retreat"
+
+
+def test_proximity_stop_also_triggers_when_robot_approaches_person() -> None:
+    config = _config(
+        seed=1,
+        speed_mps=0.2,
+        proximity_stop_distance_m=0.5,
+        proximity_resume_distance_m=0.8,
+        proximity_pause_s=0.2,
+    )
+    obstacle = _avoidance_obstacle(config)
+    assert obstacle._walker is not None
+    obstacle._walker.step(1.0)
+    obstacle._robot_position = (0.0, 0.0)
+    start = obstacle._walker.position
+
+    pose = obstacle._next_pose(0.1)
+
+    assert pose.position.to_tuple()[:2] == pytest.approx(start)
+    assert obstacle._avoidance_state == "paused"
+
+
+def test_moving_obstacle_tracks_robot_odometry() -> None:
+    obstacle = _avoidance_obstacle(_config())
+
+    obstacle._on_odometry(Odometry(pose=Pose(position=[1.25, -0.75, 0.0])))
+
+    assert obstacle._robot_position == (1.25, -0.75)
+
+
 def test_moving_obstacle_starts_timer_and_releases_transport() -> None:
     config = _config(update_hz=20.0)
     with patch(
@@ -63,6 +183,7 @@ def test_moving_obstacle_starts_timer_and_releases_transport() -> None:
     module_init.assert_called_once()
     obstacle.config = config
     obstacle.register_disposable = MagicMock()
+    obstacle.odometry = MagicMock()
     transport = MagicMock()
     interval = MagicMock()
     disposable = MagicMock()
@@ -86,7 +207,9 @@ def test_moving_obstacle_starts_timer_and_releases_transport() -> None:
         obstacle.stop()
 
     make_interval.assert_called_once_with(0.05)
-    obstacle.register_disposable.assert_called_once_with(disposable)
+    assert obstacle.register_disposable.call_count == 2
+    obstacle.register_disposable.assert_any_call(disposable)
+    obstacle.odometry.subscribe.assert_called_once_with(obstacle._on_odometry)
     assert transport.broadcast.call_count == 2
     transport.stop.assert_called_once_with()
 
@@ -132,6 +255,7 @@ def test_random_walk_pose_drives_noncolliding_pointcloud_person() -> None:
         {"waypoints": [(0.0, 0.0), (0.0, 0.0)]},
         {"initial_waypoint_index": 4},
         {"waypoints": [(0.0, 0.0), (math.inf, 1.0)]},
+        {"proximity_stop_distance_m": 1.0, "proximity_resume_distance_m": 1.0},
     ],
 )
 def test_moving_obstacle_config_rejects_invalid_waypoints(

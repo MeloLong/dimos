@@ -38,6 +38,7 @@ def test_true_simple_nav_sim_feeds_m20_slam_topics() -> None:
     assert (
         remappings[(M20MujocoSimConnection, "slam_aligned_points")] == "dimos/slam_aligned_points"
     )
+    assert remappings[(M20MovingObstacle, "odometry")] == "dimos/slam_odom"
 
 
 def test_true_simple_nav_sim_uses_go1_envelope_from_yaml() -> None:
@@ -103,3 +104,6 @@ def test_true_simple_nav_sim_loads_checked_in_moving_obstacle_profile() -> None:
     )
 
     assert obstacle.kwargs == expected
+    assert obstacle.kwargs["proximity_stop_distance_m"] == 0.9
+    assert obstacle.kwargs["proximity_resume_distance_m"] == 1.1
+    assert obstacle.kwargs["proximity_pause_s"] == 1.0

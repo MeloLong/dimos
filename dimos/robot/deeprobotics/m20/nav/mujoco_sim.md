@@ -38,6 +38,10 @@ push over the Go1 instead of testing perception and replanning. A fixed random
 seed chooses between adjacent edges of an office path already used by the
 MuJoCo person-follow tests. Disable the obstacle with
 `--option m20movingobstacle.enabled=false` when comparing against a static map.
+The person also observes `dimos/slam_odom`: when it approaches within 0.9 m of
+the robot, it stops for 1 second, reverses along a validated waypoint edge, and
+returns to normal random walking after reaching 1.1 m separation. These values
+are configured under `m20movingobstacle` in `mujoco_sim.yaml`.
 
 `m20-dan-nav-sim` runs the WD M20 Dan navigation stack against the existing
 DimOS MuJoCo simulator without opening a MuJoCo window.

@@ -174,7 +174,9 @@ m20_true_simple_nav_sim = autoconnect(
             (M20MujocoSimConnection, "slam_aligned_points", "dimos/slam_aligned_points"),
         ]
     ),
-    M20MovingObstacle.blueprint(**M20_MOVING_OBSTACLE_CONFIG),
+    M20MovingObstacle.blueprint(**M20_MOVING_OBSTACLE_CONFIG).remappings(
+        [(M20MovingObstacle, "odometry", "dimos/slam_odom")]
+    ),
     M20TF.blueprint().remappings([(M20TF, "odometry", "dimos/slam_odom")]),
 ).global_config(
     n_workers=11,

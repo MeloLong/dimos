@@ -18,15 +18,19 @@ from __future__ import annotations
 
 import math
 import random
+from typing import Literal
 
 from pydantic import Field, model_validator
 import reactivex as rx
+from reactivex.disposable import Disposable
 
 from dimos.core.core import rpc
 from dimos.core.module import Module, ModuleConfig
+from dimos.core.stream import In
 from dimos.core.transport import PubSubTransport
 from dimos.core.transport_factory import make_transport
 from dimos.msgs.geometry_msgs.Pose import Pose
+from dimos.msgs.nav_msgs.Odometry import Odometry
 from dimos.utils.logging_config import setup_logger
 
 logger = setup_logger()
@@ -44,6 +48,9 @@ class M20MovingObstacleConfig(ModuleConfig):
     initial_waypoint_index: int = Field(default=0, ge=0)
     z_m: float = 0.0
     waypoints: list[tuple[float, float]]
+    proximity_stop_distance_m: float = Field(default=0.9, gt=0.0, le=10.0)
+    proximity_resume_distance_m: float = Field(default=1.1, gt=0.0, le=10.0)
+    proximity_pause_s: float = Field(default=1.0, ge=0.0, le=60.0)
 
     @model_validator(mode="after")
     def validate_waypoints(self) -> M20MovingObstacleConfig:
@@ -55,6 +62,10 @@ class M20MovingObstacleConfig(ModuleConfig):
             raise ValueError("initial_waypoint_index is outside the waypoint list")
         if any(not math.isfinite(value) for point in self.waypoints for value in point):
             raise ValueError("moving obstacle waypoints must be finite")
+        if self.proximity_resume_distance_m <= self.proximity_stop_distance_m:
+            raise ValueError(
+                "proximity_resume_distance_m must be greater than proximity_stop_distance_m"
+            )
         return self
 
 
@@ -78,7 +89,57 @@ class RandomWaypointWalk:
     def target_waypoint_index(self) -> int:
         return self._target_waypoint_index
 
-    def step(self, dt_seconds: float) -> Pose:
+    @property
+    def target_position(self) -> tuple[float, float]:
+        return self._waypoints[self._target_waypoint_index]
+
+    @property
+    def speed_mps(self) -> float:
+        return self._speed_mps
+
+    @property
+    def at_waypoint(self) -> bool:
+        return self.position == self._waypoints[self._current_waypoint_index]
+
+    def is_moving_toward(self, point: tuple[float, float]) -> bool:
+        target = self.target_position
+        travel_x = target[0] - self._position[0]
+        travel_y = target[1] - self._position[1]
+        point_x = point[0] - self._position[0]
+        point_y = point[1] - self._position[1]
+        return travel_x * point_x + travel_y * point_y > 0.0
+
+    def redirect_away_from(self, point: tuple[float, float]) -> bool:
+        """Choose the legal adjacent direction with the largest separation gain."""
+        current = self._current_waypoint_index
+        target = self._target_waypoint_index
+        if not self.at_waypoint:
+            candidates = (current, target)
+        else:
+            count = len(self._waypoints)
+            candidates = ((current - 1) % count, (current + 1) % count)
+
+        away_x = self._position[0] - point[0]
+        away_y = self._position[1] - point[1]
+        selected = max(
+            candidates,
+            key=lambda index: (
+                (self._waypoints[index][0] - self._position[0]) * away_x
+                + (self._waypoints[index][1] - self._position[1]) * away_y
+            ),
+        )
+        separation_gain = (self._waypoints[selected][0] - self._position[0]) * away_x + (
+            self._waypoints[selected][1] - self._position[1]
+        ) * away_y
+        if separation_gain <= 0.0:
+            return False
+        if not self.at_waypoint:
+            # The non-target endpoint becomes the logical edge origin.
+            self._current_waypoint_index = target
+        self._target_waypoint_index = selected
+        return True
+
+    def step(self, dt_seconds: float, *, stop_at_waypoint: bool = False) -> Pose:
         if not math.isfinite(dt_seconds) or dt_seconds < 0.0:
             raise ValueError("dt_seconds must be finite and non-negative")
 
@@ -96,6 +157,8 @@ class RandomWaypointWalk:
 
             if travel == distance:
                 self._arrive_at_target()
+                if stop_at_waypoint:
+                    break
 
         return self.pose()
 
@@ -129,8 +192,12 @@ class M20MovingObstacle(Module):
     """Publish one deterministic pseudo-random person pose into MuJoCo."""
 
     config: M20MovingObstacleConfig
+    odometry: In[Odometry]
     _transport: PubSubTransport[Pose] | None = None
     _walker: RandomWaypointWalk | None = None
+    _robot_position: tuple[float, float] | None = None
+    _avoidance_state: Literal["normal", "paused", "retreat"] = "normal"
+    _pause_remaining_s: float = 0.0
 
     @rpc
     def start(self) -> None:
@@ -140,6 +207,9 @@ class M20MovingObstacle(Module):
 
         self._transport = make_transport(PERSON_POSE_TOPIC, Pose)
         self._walker = RandomWaypointWalk(self.config)
+        self._avoidance_state = "normal"
+        self._pause_remaining_s = 0.0
+        self.register_disposable(Disposable(self.odometry.subscribe(self._on_odometry)))
         self._publish_pose(self._walker.pose())
         self.register_disposable(
             rx.interval(1.0 / self.config.update_hz).subscribe(
@@ -155,6 +225,9 @@ class M20MovingObstacle(Module):
         transport = self._transport
         self._transport = None
         self._walker = None
+        self._robot_position = None
+        self._avoidance_state = "normal"
+        self._pause_remaining_s = 0.0
         try:
             super().stop()
         finally:
@@ -164,7 +237,57 @@ class M20MovingObstacle(Module):
     def _tick(self, _index: int) -> None:
         if self._walker is None:
             return
-        self._publish_pose(self._walker.step(1.0 / self.config.update_hz))
+        self._publish_pose(self._next_pose(1.0 / self.config.update_hz))
+
+    def _on_odometry(self, odometry: Odometry) -> None:
+        self._robot_position = (odometry.position.x, odometry.position.y)
+
+    def _next_pose(self, dt_seconds: float) -> Pose:
+        walker = self._walker
+        robot = self._robot_position
+        if walker is None or robot is None:
+            return walker.step(dt_seconds) if walker is not None else Pose()
+
+        distance = math.dist(walker.position, robot)
+        if self._avoidance_state == "normal":
+            stopping_margin = walker.speed_mps * dt_seconds
+            if distance <= self.config.proximity_stop_distance_m + stopping_margin:
+                walker.redirect_away_from(robot)
+                self._avoidance_state = "paused"
+                self._pause_remaining_s = self.config.proximity_pause_s
+                logger.info(
+                    "M20 moving obstacle stopping near robot",
+                    distance_m=round(distance, 3),
+                )
+                if self._pause_remaining_s > 0.0:
+                    return walker.pose()
+
+        if self._avoidance_state == "paused":
+            self._pause_remaining_s = max(0.0, self._pause_remaining_s - dt_seconds)
+            if self._pause_remaining_s > 0.0:
+                return walker.pose()
+            self._avoidance_state = "retreat"
+            logger.info("M20 moving obstacle redirecting away from robot")
+
+        if self._avoidance_state == "retreat":
+            if distance >= self.config.proximity_resume_distance_m:
+                self._avoidance_state = "normal"
+                logger.info(
+                    "M20 moving obstacle resuming random walk",
+                    distance_m=round(distance, 3),
+                )
+            elif walker.at_waypoint and not walker.redirect_away_from(robot):
+                return walker.pose()
+            elif (
+                distance <= self.config.proximity_stop_distance_m + walker.speed_mps * dt_seconds
+                and walker.is_moving_toward(robot)
+            ):
+                walker.redirect_away_from(robot)
+
+        return walker.step(
+            dt_seconds,
+            stop_at_waypoint=self._avoidance_state == "retreat",
+        )
 
     def _publish_pose(self, pose: Pose) -> None:
         if self._transport is not None:

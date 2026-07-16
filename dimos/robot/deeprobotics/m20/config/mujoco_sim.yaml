@@ -75,6 +75,17 @@ m20movingobstacle:
   # Ground-level mocap position expected by the existing person mesh.
   z_m: 0.0
 
+  # Stop before the moving person comes within this centre-to-centre distance
+  # of the robot. Physical person collisions remain disabled in MuJoCo.
+  proximity_stop_distance_m: 0.9
+
+  # Resume normal random walking after retreating beyond this distance. It must
+  # be greater than the stop distance so sensor noise cannot toggle the state.
+  proximity_resume_distance_m: 1.1
+
+  # Time to hold the person stationary before reversing along a legal path edge.
+  proximity_pause_s: 1.0
+
   # Validated office path from the existing MuJoCo person-follow scenarios.
   # At each point the obstacle randomly chooses the previous or next edge.
   waypoints:
