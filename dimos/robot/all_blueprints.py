@@ -221,6 +221,7 @@ all_modules = {
     "m20-connection": "dimos.robot.deeprobotics.m20.connection.M20Connection",
     "m20-dds": "dimos.robot.deeprobotics.m20.dds.module.M20Dds",
     "m20-lidar": "dimos.robot.m20_native.m20_sensors.M20Lidar",
+    "m20-moving-obstacle": "dimos.robot.deeprobotics.m20.nav.moving_obstacle.M20MovingObstacle",
     "m20-mujoco-sim-connection": "dimos.robot.deeprobotics.m20.mujoco_sim.M20MujocoSimConnection",
     "m20-tf": "dimos.robot.deeprobotics.m20.tf.M20TF",
     "manipulation-module": "dimos.manipulation.manipulation_module.ManipulationModule",

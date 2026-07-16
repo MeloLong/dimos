@@ -30,6 +30,13 @@ Go1 envelope from `mujoco_sim.yaml`: 0.50 m height and 0.45 m radial
 clearance, resulting in a 0.90 m A* robot width and rotation diameter. It is a
 planning/control integration test, not an M20 dynamics validation.
 
+The simulation also enables one person-shaped moving obstacle. It reuses the
+existing MuJoCo mocap person and `/person_pose` transport, so the obstacle is
+visible to RGB and synthetic point clouds and participates in collisions. A
+fixed random seed chooses between adjacent edges of an office path already used
+by the MuJoCo person-follow tests. Disable it with
+`--option m20movingobstacle.enabled=false` when comparing against a static map.
+
 `m20-dan-nav-sim` runs the WD M20 Dan navigation stack against the existing
 DimOS MuJoCo simulator without opening a MuJoCo window.
 
