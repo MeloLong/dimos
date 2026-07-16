@@ -5,6 +5,7 @@ import numpy as np
 
 from dimos.mapping.occupancy.path_resampling import (
     ConstrainedPathSmoothingConfig,
+    _path_cost_validation,
     constrained_smooth_resample_path,
 )
 from dimos.msgs.geometry_msgs.Pose import Pose
@@ -78,3 +79,24 @@ def test_zero_iterations_preserves_raw_geometry() -> None:
 
     assert result.poses[0].position.distance(raw.poses[0].position) < 1e-9
     assert result.poses[-1].position.distance(raw.poses[-1].position) < 1e-9
+
+
+def test_path_cost_validation_reports_rejection_reason() -> None:
+    costmap = _costmap()
+    costmap.grid[10, 10] = CostValues.OCCUPIED
+
+    lethal_cost, lethal_reason = _path_cost_validation(
+        np.array([[0.0, 0.0], [0.5, 0.5]]),
+        costmap,
+        0.025,
+    )
+    outside_cost, outside_reason = _path_cost_validation(
+        np.array([[0.0, 0.0], [-0.1, 0.0]]),
+        costmap,
+        0.025,
+    )
+
+    assert lethal_cost is None
+    assert lethal_reason == "lethal_cell"
+    assert outside_cost is None
+    assert outside_reason == "out_of_bounds"

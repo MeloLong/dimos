@@ -151,6 +151,20 @@ behavior, replans, and clearance over time.
 coefficient. When enabled it publishes `/raw_path` for Rerun comparison without
 changing the path consumed by `LocalPlanner`.
 
+#### Runtime Fallback Observation
+
+A 2026-07-16 MuJoCo stress run issued 121 rapid goal requests. Thirty-four
+paths (about 28%) failed final constrained-smoothing validation and correctly
+fell back to uniformly resampled raw A*. These fallback paths remain safe but
+visibly retain raw grid bends, matching the reported poor-looking cases.
+
+The original warning confirmed fallback but did not record whether validation
+found a lethal/out-of-map sample or exceeded the configured mean-cost increase.
+The diagnostic now reports `reason`, raw/candidate/allowed cost, point counts,
+and actual maximum displacement without changing smoothing decisions. A new run
+is required to identify which rejection reason dominates before changing any
+safety threshold or smoothing parameter.
+
 ## Evidence And Problems
 
 | ID | State | Problem | Evidence | Effect |
