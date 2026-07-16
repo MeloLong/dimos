@@ -59,3 +59,8 @@ mlsplannernative:
   # Hard radial clearance from the robot centre to walls and map edges, in metres.
   # Includes margin beyond the nominal 0.399 m maximum horizontal Go1 radius.
   wall_clearance_m: 0.45
+
+replanningastarplanner:
+  # Publish the raw grid-cell A* route on /raw_path for Rerun comparison.
+  # Keep disabled during normal operation; restart DimOS after changing it.
+  publish_raw_path: false

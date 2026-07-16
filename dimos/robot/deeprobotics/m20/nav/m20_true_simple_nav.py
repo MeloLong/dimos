@@ -31,7 +31,10 @@ from dimos.mapping.pointclouds.occupancy import HeightCostConfig
 from dimos.mapping.ray_tracing.module import RayTracingVoxelMap
 from dimos.navigation.movement_manager.movement_manager import MovementManager
 from dimos.navigation.nav_3d.mls_planner.mls_planner_native import MLSPlannerNativeConfig
-from dimos.navigation.replanning_a_star.module import ReplanningAStarPlanner
+from dimos.navigation.replanning_a_star.module import (
+    ReplanningAStarPlanner,
+    ReplanningAStarPlannerConfig,
+)
 from dimos.robot.deeprobotics.m20.blueprints.basic import m20, rerun
 from dimos.robot.deeprobotics.m20.mujoco_sim import (
     M20MujocoSimConfig,
@@ -54,19 +57,22 @@ map_save_path = map_save_dir / "m20_accumulated_map.pcd"
 M20_MUJOCO_SIM_CONFIG_PATH = Path(__file__).resolve().parents[1] / "config/mujoco_sim.yaml"
 
 
-def _load_m20_mujoco_sim_config() -> tuple[dict[str, Any], dict[str, Any]]:
+def _load_m20_mujoco_sim_config() -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
     payload = yaml.safe_load(M20_MUJOCO_SIM_CONFIG_PATH.read_text(encoding="utf-8"))
     connection_values = payload["m20mujocosimconnection"]
     envelope_values = payload["mlsplannernative"]
+    planner_values = payload["replanningastarplanner"]
     connection_config = M20MujocoSimConfig.model_validate(connection_values)
     envelope_config = MLSPlannerNativeConfig.model_validate(envelope_values)
+    planner_config = ReplanningAStarPlannerConfig.model_validate(planner_values)
     return (
         connection_config.model_dump(include=set(connection_values)),
         envelope_config.model_dump(include=set(envelope_values)),
+        planner_config.model_dump(include=set(planner_values)),
     )
 
 
-M20_MUJOCO_SIM_CONFIG, GO1_MUJOCO_ENVELOPE = _load_m20_mujoco_sim_config()
+M20_MUJOCO_SIM_CONFIG, GO1_MUJOCO_ENVELOPE, M20_SIM_PLANNER_CONFIG = _load_m20_mujoco_sim_config()
 
 _m20_slam_ray_tracer = RayTracingVoxelMap.blueprint(
     voxel_size=voxel_size,
@@ -145,6 +151,7 @@ m20_true_simple_nav_sim = autoconnect(
     ReplanningAStarPlanner.blueprint(
         robot_width=_go1_sim_clearance * 2,
         robot_rotation_diameter=_go1_sim_clearance * 2,
+        **M20_SIM_PLANNER_CONFIG,
     ).remappings([(ReplanningAStarPlanner, "odometry", "dimos/slam_odom")]),
     MovementManager.blueprint(),
     M20MujocoSimConnection.blueprint(**M20_MUJOCO_SIM_CONFIG).remappings(

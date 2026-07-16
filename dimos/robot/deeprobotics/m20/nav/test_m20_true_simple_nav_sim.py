@@ -53,6 +53,16 @@ def test_true_simple_nav_sim_uses_go1_envelope_from_yaml() -> None:
     assert m20_true_simple_nav_sim.global_config_overrides["robot_model"] == "unitree_go1"
 
 
+def test_true_simple_nav_sim_loads_raw_path_debug_switch() -> None:
+    payload = yaml.safe_load(M20_MUJOCO_SIM_CONFIG_PATH.read_text(encoding="utf-8"))
+    planner = next(
+        atom for atom in m20_true_simple_nav_sim.blueprints if atom.module is ReplanningAStarPlanner
+    )
+
+    assert payload["replanningastarplanner"]["publish_raw_path"] is False
+    assert planner.kwargs["publish_raw_path"] is False
+
+
 def test_true_simple_nav_sim_loads_checked_in_sensor_profile() -> None:
     payload = yaml.safe_load(M20_MUJOCO_SIM_CONFIG_PATH.read_text(encoding="utf-8"))
     values = payload["m20mujocosimconnection"]
