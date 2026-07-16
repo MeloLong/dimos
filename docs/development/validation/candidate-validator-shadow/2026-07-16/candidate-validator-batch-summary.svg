@@ -1,0 +1,102 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="520" viewBox="0 0 900 520" role="img" aria-labelledby="title desc">
+  <title id="title">Candidate validator batch comparison</title>
+  <desc id="desc">Comparison of dynamic-person and clean-static candidate path validation results, including physical regressions accepted by the legacy cost gate and a two-centimetre policy replay.</desc>
+  <rect width="900" height="520" fill="#151515"/>
+  <style>
+    text { fill: #f3f3f3; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    .muted { fill: #a5a5a5; }
+    .heading { font-size: 20px; font-weight: 600; }
+    .label { font-size: 14px; font-weight: 600; }
+    .value { font-size: 14px; font-weight: 600; text-anchor: end; }
+    .legend { font-size: 13px; }
+    .track { fill: #333333; }
+    .dynamic { fill: #7dbcf2; }
+    .static { fill: #ffa05a; }
+    .alpha025 { fill: #6fd08c; }
+    .alpha0125 { fill: #e989b5; }
+    .raw { fill: #a082e6; }
+    .rule { stroke: #303030; stroke-width: 1; }
+  </style>
+
+  <rect x="82" y="20" width="10" height="10" class="dynamic"/>
+  <text x="99" y="30" class="legend muted">动态行人，85 条规划</text>
+  <rect x="228" y="20" width="10" height="10" class="static"/>
+  <text x="245" y="30" class="legend muted">静态场景，102 条规划</text>
+  <text x="382" y="30" class="legend muted">机器人位姿漂移：0.000 m</text>
+
+  <line x1="82" y1="49" x2="438" y2="49" class="rule"/>
+  <line x1="462" y1="49" x2="818" y2="49" class="rule"/>
+  <text x="82" y="80" class="heading">旧 +2.0 门槛放行的退化比例</text>
+  <text x="462" y="80" class="heading">已选轨迹最坏退化量，cm</text>
+
+  <text x="82" y="112" class="label">最小净空下降</text>
+  <text x="438" y="112" class="value">28.2% / 20.6%</text>
+  <rect x="82" y="123" width="356" height="12" class="track"/>
+  <rect x="82" y="123" width="100" height="12" class="dynamic"/>
+  <rect x="82" y="141" width="356" height="12" class="track"/>
+  <rect x="82" y="141" width="73" height="12" class="static"/>
+
+  <text x="82" y="184" class="label">P5 净空下降</text>
+  <text x="438" y="184" class="value">56.5% / 44.1%</text>
+  <rect x="82" y="195" width="356" height="12" class="track"/>
+  <rect x="82" y="195" width="201" height="12" class="dynamic"/>
+  <rect x="82" y="213" width="356" height="12" class="track"/>
+  <rect x="82" y="213" width="157" height="12" class="static"/>
+
+  <text x="82" y="256" class="label">未知区域长度增加</text>
+  <text x="438" y="256" class="value">16.5% / 14.7%</text>
+  <rect x="82" y="267" width="356" height="12" class="track"/>
+  <rect x="82" y="267" width="59" height="12" class="dynamic"/>
+  <rect x="82" y="285" width="356" height="12" class="track"/>
+  <rect x="82" y="285" width="52" height="12" class="static"/>
+
+  <text x="462" y="112" class="label">最小净空损失</text>
+  <text x="818" y="112" class="value">3.9 / 1.7</text>
+  <rect x="462" y="123" width="356" height="12" class="track"/>
+  <rect x="462" y="123" width="139" height="12" class="dynamic"/>
+  <rect x="462" y="141" width="356" height="12" class="track"/>
+  <rect x="462" y="141" width="61" height="12" class="static"/>
+
+  <text x="462" y="184" class="label">P5 净空损失</text>
+  <text x="818" y="184" class="value">8.5 / 9.2</text>
+  <rect x="462" y="195" width="356" height="12" class="track"/>
+  <rect x="462" y="195" width="303" height="12" class="dynamic"/>
+  <rect x="462" y="213" width="356" height="12" class="track"/>
+  <rect x="462" y="213" width="328" height="12" class="static"/>
+
+  <text x="462" y="256" class="label">未知区域长度增加</text>
+  <text x="818" y="256" class="value">6.2 / 3.3</text>
+  <rect x="462" y="267" width="356" height="12" class="track"/>
+  <rect x="462" y="267" width="221" height="12" class="dynamic"/>
+  <rect x="462" y="285" width="356" height="12" class="track"/>
+  <rect x="462" y="285" width="117" height="12" class="static"/>
+
+  <line x1="82" y1="330" x2="818" y2="330" class="rule"/>
+  <text x="82" y="362" class="heading">2 cm 净空限制 + 未知区域零增加：影子重放</text>
+
+  <text x="82" y="398" class="label">动态</text>
+  <rect x="155" y="381" width="605" height="20" class="track"/>
+  <rect x="155" y="381" width="477" height="20" class="dynamic"/>
+  <rect x="632" y="381" width="7" height="20" class="static"/>
+  <rect x="639" y="381" width="21" height="20" class="alpha025"/>
+  <rect x="660" y="381" width="21" height="20" class="alpha0125"/>
+  <rect x="681" y="381" width="79" height="20" class="raw"/>
+  <text x="793" y="397" class="value">85</text>
+
+  <text x="82" y="432" class="label">静态</text>
+  <rect x="155" y="415" width="605" height="20" class="track"/>
+  <rect x="155" y="415" width="516" height="20" class="dynamic"/>
+  <rect x="671" y="415" width="89" height="20" class="raw"/>
+  <text x="793" y="431" class="value">102</text>
+
+  <rect x="82" y="457" width="10" height="10" class="dynamic"/>
+  <text x="99" y="467" class="legend muted">α 1.0</text>
+  <rect x="138" y="457" width="10" height="10" class="static"/>
+  <text x="155" y="467" class="legend muted">α 0.5</text>
+  <rect x="194" y="457" width="10" height="10" class="alpha025"/>
+  <text x="211" y="467" class="legend muted">α 0.25</text>
+  <rect x="258" y="457" width="10" height="10" class="alpha0125"/>
+  <text x="275" y="467" class="legend muted">α 0.125</text>
+  <rect x="330" y="457" width="10" height="10" class="raw"/>
+  <text x="347" y="467" class="legend muted">raw</text>
+</svg>

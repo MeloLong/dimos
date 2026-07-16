@@ -859,7 +859,7 @@ Still required before a live Stage 2 decision change:
 - [ ] run the physical validator in shadow alongside the legacy gate before
   making it authoritative.
 
-![Candidate validator batch comparison](validation/candidate-validator-shadow/2026-07-16/candidate-validator-batch-summary.png)
+![Candidate validator batch comparison](validation/candidate-validator-shadow/2026-07-16/candidate-validator-batch-summary.svg)
 
 The repeatable runner held the robot near `(-1.006, 1.000)` by publishing a
 zero teleop command before each goal. Each successful goal produced exactly one

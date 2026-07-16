@@ -24,7 +24,7 @@ The first static attempt is excluded. Its original 50 ms teleop-to-goal delay
 allowed one cancellation callback to overlap a new goal. The tool now waits
 200 ms; the clean rerun produced no new assertion and zero odometry drift.
 
-![Candidate validator batch comparison](candidate-validator-batch-summary.png)
+![Candidate validator batch comparison](candidate-validator-batch-summary.svg)
 
 ## Results
 
