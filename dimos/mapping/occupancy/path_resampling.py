@@ -169,12 +169,12 @@ def simple_resample_path(path: Path, goal_pose: Pose, spacing: float) -> Path:
     return ret
 
 
-def _effective_path_cost(
+def _path_cost_validation(
     points: np.ndarray,
     costmap: OccupancyGrid,
     sample_spacing_m: float,
-) -> float | None:
-    """Return mean traversable cost, or None if a segment leaves the safe map."""
+) -> tuple[float | None, str | None]:
+    """Return mean traversable cost and a failure reason when invalid."""
     values: list[float] = []
     for segment_index, (start, end) in enumerate(pairwise(points)):
         length = float(np.linalg.norm(end - start))
@@ -187,15 +187,23 @@ def _effective_path_cost(
             grid_x = math.floor(grid_point.x)
             grid_y = math.floor(grid_point.y)
             if not (0 <= grid_x < costmap.width and 0 <= grid_y < costmap.height):
-                return None
+                return None, "out_of_bounds"
 
             value = int(costmap.grid[grid_y, grid_x])
             if value >= CostValues.OCCUPIED:
-                return None
+                return None, "lethal_cell"
             # Match min_cost_astar's default unknown penalty: 0.8 * 100.
             values.append(80.0 if value == CostValues.UNKNOWN else max(0.0, float(value)))
 
-    return float(np.mean(values)) if values else 0.0
+    return (float(np.mean(values)) if values else 0.0), None
+
+
+def _effective_path_cost(
+    points: np.ndarray,
+    costmap: OccupancyGrid,
+    sample_spacing_m: float,
+) -> float | None:
+    return _path_cost_validation(points, costmap, sample_spacing_m)[0]
 
 
 def _path_from_xy(path: Path, points: np.ndarray) -> Path:
@@ -229,9 +237,17 @@ def constrained_smooth_resample_path(
     if len(original) < 3:
         return raw_resampled
 
-    raw_cost = _effective_path_cost(original, costmap, config.collision_sample_spacing_m)
+    raw_cost, raw_failure_reason = _path_cost_validation(
+        original,
+        costmap,
+        config.collision_sample_spacing_m,
+    )
     if raw_cost is None:
-        logger.warning("Raw A* path failed constrained-smoothing validation; skipping smoothing.")
+        logger.warning(
+            "Raw A* path failed constrained-smoothing validation; skipping smoothing.",
+            reason=raw_failure_reason,
+            raw_points=len(original),
+        )
         return raw_resampled
 
     smoothed = original.copy()
@@ -286,13 +302,25 @@ def constrained_smooth_resample_path(
     candidate_points = np.array(
         [[pose.x, pose.y] for pose in candidate_path.poses], dtype=np.float64
     )
-    candidate_cost = _effective_path_cost(
+    candidate_cost, candidate_failure_reason = _path_cost_validation(
         candidate_points,
         costmap,
         config.collision_sample_spacing_m,
     )
     if candidate_cost is None or candidate_cost > raw_cost + config.max_cost_increase:
-        logger.warning("Constrained path smoothing failed final validation; using raw A* path.")
+        logger.warning(
+            "Constrained path smoothing failed final validation; using raw A* path.",
+            reason=candidate_failure_reason or "cost_increase",
+            raw_cost=round(raw_cost, 3),
+            candidate_cost=None if candidate_cost is None else round(candidate_cost, 3),
+            max_allowed_cost=round(raw_cost + config.max_cost_increase, 3),
+            raw_points=len(original),
+            candidate_points=len(candidate_points),
+            max_deviation_m=round(
+                float(np.max(np.linalg.norm(smoothed - original, axis=1))),
+                3,
+            ),
+        )
         return raw_resampled
 
     return candidate_path
