@@ -15,7 +15,9 @@
 
 from dataclasses import asdict, dataclass
 from itertools import pairwise
+import json
 import math
+from time import perf_counter
 
 import numpy as np
 from scipy.ndimage import distance_transform_edt, uniform_filter1d
@@ -44,6 +46,10 @@ class ConstrainedPathSmoothingConfig:
     backtracking_factor: float = 0.5
     max_backtracking_steps: int = 3
     validator_shadow_enabled: bool = False
+    physical_validator_shadow_enabled: bool = False
+    physical_validator_authoritative_enabled: bool = False
+    physical_validator_max_clearance_loss_m: float = 0.025
+    physical_validator_max_unknown_length_increase_m: float = 0.0
 
     def __post_init__(self) -> None:
         if self.spacing_m <= 0 or self.collision_sample_spacing_m <= 0:
@@ -60,6 +66,10 @@ class ConstrainedPathSmoothingConfig:
             raise ValueError("backtracking_factor must be between 0 and 1")
         if self.max_backtracking_steps < 0:
             raise ValueError("max_backtracking_steps must be non-negative")
+        if self.physical_validator_max_clearance_loss_m < 0:
+            raise ValueError("physical validator clearance loss must be non-negative")
+        if self.physical_validator_max_unknown_length_increase_m < 0:
+            raise ValueError("physical validator unknown length increase must be non-negative")
 
 
 @dataclass(frozen=True)
@@ -72,6 +82,62 @@ class PathPhysicalMetrics:
     unknown_ratio: float
     mean_cost: float | None
     validation_reason: str | None
+
+
+@dataclass(frozen=True)
+class PhysicalCandidateDecision:
+    alpha: float
+    accepted: bool
+    rejection_reason: str | None
+    min_clearance_loss_m: float | None
+    unknown_length_increase_m: float
+
+
+def select_physical_path_candidate(
+    raw: PathPhysicalMetrics,
+    candidates: list[tuple[float, PathPhysicalMetrics]],
+    *,
+    max_clearance_loss_m: float,
+    max_unknown_length_increase_m: float,
+    epsilon: float = 1e-9,
+) -> tuple[float | None, list[PhysicalCandidateDecision]]:
+    """Select the largest physically valid smoothing alpha."""
+    if max_clearance_loss_m < 0 or max_unknown_length_increase_m < 0:
+        raise ValueError("physical validator thresholds must be non-negative")
+
+    selected_alpha: float | None = None
+    decisions: list[PhysicalCandidateDecision] = []
+    for alpha, candidate in sorted(candidates, key=lambda item: item[0], reverse=True):
+        clearance_loss = (
+            raw.min_clearance_m - candidate.min_clearance_m
+            if raw.min_clearance_m is not None and candidate.min_clearance_m is not None
+            else None
+        )
+        unknown_increase = candidate.unknown_length_m - raw.unknown_length_m
+        reason = candidate.validation_reason
+        if (
+            reason is None
+            and clearance_loss is not None
+            and clearance_loss > max_clearance_loss_m + epsilon
+        ):
+            reason = "clearance_loss"
+        if reason is None and unknown_increase > max_unknown_length_increase_m + epsilon:
+            reason = "unknown_length_increase"
+
+        accepted = reason is None
+        decisions.append(
+            PhysicalCandidateDecision(
+                alpha=alpha,
+                accepted=accepted,
+                rejection_reason=reason,
+                min_clearance_loss_m=clearance_loss,
+                unknown_length_increase_m=unknown_increase,
+            )
+        )
+        if accepted and selected_alpha is None:
+            selected_alpha = alpha
+
+    return selected_alpha, decisions
 
 
 def _lethal_clearance_grid(costmap: OccupancyGrid) -> np.ndarray | None:
@@ -370,35 +436,64 @@ def _select_backtracked_path(
     costmap: OccupancyGrid,
     config: ConstrainedPathSmoothingConfig,
 ) -> Path:
+    validator_started = perf_counter()
+    physical_validator_enabled = (
+        config.physical_validator_shadow_enabled or config.physical_validator_authoritative_enabled
+    )
+    metrics_enabled = config.validator_shadow_enabled or physical_validator_enabled
     raw_resampled = _resample_xy(source_path, original, goal_pose, config.spacing_m)
     raw_resampled_points = np.array(
         [[pose.x, pose.y] for pose in raw_resampled.poses],
         dtype=np.float64,
     )
-    baseline_cost, baseline_failure_reason = _path_cost_validation(
-        raw_resampled_points,
-        costmap,
-        config.collision_sample_spacing_m,
-    )
-    clearance_grid = _lethal_clearance_grid(costmap) if config.validator_shadow_enabled else None
-    raw_metrics = (
-        _path_physical_metrics(
+    clearance_started = perf_counter()
+    clearance_grid = _lethal_clearance_grid(costmap) if metrics_enabled else None
+    clearance_transform_ms = (perf_counter() - clearance_started) * 1000
+    candidate_evaluation_ms = 0.0
+    if metrics_enabled:
+        evaluation_started = perf_counter()
+        raw_metrics: PathPhysicalMetrics | None = _path_physical_metrics(
             raw_resampled_points,
             costmap,
             config.collision_sample_spacing_m,
             clearance_grid,
         )
-        if config.validator_shadow_enabled
-        else None
-    )
+        candidate_evaluation_ms += (perf_counter() - evaluation_started) * 1000
+        baseline_cost = raw_metrics.mean_cost
+        baseline_failure_reason = raw_metrics.validation_reason
+    else:
+        raw_metrics = None
+        baseline_cost, baseline_failure_reason = _path_cost_validation(
+            raw_resampled_points,
+            costmap,
+            config.collision_sample_spacing_m,
+        )
     if baseline_cost is None:
         if raw_metrics is not None:
+            shadow_report = {
+                "legacy_selected_alpha": None,
+                "physical_selected_alpha": None,
+                "physical_decision_matches_legacy": (True if physical_validator_enabled else None),
+                "physical_validator_evaluated": physical_validator_enabled,
+                "physical_max_clearance_loss_m": (config.physical_validator_max_clearance_loss_m),
+                "physical_max_unknown_length_increase_m": (
+                    config.physical_validator_max_unknown_length_increase_m
+                ),
+                "selected_alpha": None,
+                "selected_path": "raw_resampled",
+                "raw": _metrics_for_log(raw_metrics),
+                "candidates": [],
+                "timing": {
+                    "clearance_transform_ms": round(clearance_transform_ms, 4),
+                    "candidate_evaluation_ms": round(candidate_evaluation_ms, 4),
+                    "validator_total_ms": round((perf_counter() - validator_started) * 1000, 4),
+                },
+            }
             logger.info(
                 "Candidate path validator shadow metrics.",
+                shadow_report=json.dumps(shadow_report, separators=(",", ":")),
                 selected_alpha=None,
                 selected_path="raw_resampled",
-                raw=_metrics_for_log(raw_metrics),
-                candidates=[],
             )
         logger.warning(
             "Raw-resampled baseline failed path validation; using raw-resampled A* path.",
@@ -417,6 +512,8 @@ def _select_backtracked_path(
     selected_path: Path | None = None
     selected_alpha: float | None = None
     shadow_candidates: list[dict[str, object]] = []
+    candidate_metrics_by_alpha: list[tuple[float, PathPhysicalMetrics]] = []
+    candidate_paths_by_alpha: dict[float, Path] = {}
 
     for fraction in fractions:
         blended = original + fraction * full_offset
@@ -425,22 +522,31 @@ def _select_backtracked_path(
             [[pose.x, pose.y] for pose in candidate_path.poses],
             dtype=np.float64,
         )
-        candidate_cost, failure_reason = _path_cost_validation(
-            candidate_points,
-            costmap,
-            config.collision_sample_spacing_m,
-        )
-        rejection_reason = failure_reason
-        if candidate_cost is not None and candidate_cost > max_allowed_cost:
-            rejection_reason = "cost_increase"
-
-        if config.validator_shadow_enabled:
+        if metrics_enabled:
+            evaluation_started = perf_counter()
             candidate_metrics = _path_physical_metrics(
                 candidate_points,
                 costmap,
                 config.collision_sample_spacing_m,
                 clearance_grid,
             )
+            candidate_evaluation_ms += (perf_counter() - evaluation_started) * 1000
+            candidate_cost = candidate_metrics.mean_cost
+            failure_reason = candidate_metrics.validation_reason
+            candidate_metrics_by_alpha.append((fraction, candidate_metrics))
+            candidate_paths_by_alpha[fraction] = candidate_path
+        else:
+            candidate_metrics = None
+            candidate_cost, failure_reason = _path_cost_validation(
+                candidate_points,
+                costmap,
+                config.collision_sample_spacing_m,
+            )
+        rejection_reason = failure_reason
+        if candidate_cost is not None and candidate_cost > max_allowed_cost:
+            rejection_reason = "cost_increase"
+
+        if candidate_metrics is not None:
             shadow_candidates.append(
                 {
                     "alpha": round(fraction, 4),
@@ -469,7 +575,7 @@ def _select_backtracked_path(
                         3,
                     ),
                 )
-                if not config.validator_shadow_enabled:
+                if not metrics_enabled:
                     return candidate_path
             continue
 
@@ -484,15 +590,64 @@ def _select_backtracked_path(
                 max_allowed_cost=round(max_allowed_cost, 3),
             )
 
+    physical_selected_alpha: float | None = None
+    if raw_metrics is not None and physical_validator_enabled:
+        physical_selected_alpha, physical_decisions = select_physical_path_candidate(
+            raw_metrics,
+            candidate_metrics_by_alpha,
+            max_clearance_loss_m=config.physical_validator_max_clearance_loss_m,
+            max_unknown_length_increase_m=(config.physical_validator_max_unknown_length_increase_m),
+        )
+        for candidate, decision in zip(shadow_candidates, physical_decisions, strict=True):
+            candidate.update(
+                {
+                    "physical_gate_passed": decision.accepted,
+                    "physical_rejection_reason": decision.rejection_reason,
+                    "min_clearance_loss_m": (
+                        None
+                        if decision.min_clearance_loss_m is None
+                        else round(decision.min_clearance_loss_m, 4)
+                    ),
+                    "unknown_length_increase_m": round(decision.unknown_length_increase_m, 4),
+                }
+            )
+
     if raw_metrics is not None:
+        decision_matches = (
+            physical_selected_alpha == selected_alpha if physical_validator_enabled else None
+        )
+        shadow_report = {
+            "legacy_selected_alpha": selected_alpha,
+            "physical_selected_alpha": physical_selected_alpha,
+            "physical_decision_matches_legacy": decision_matches,
+            "physical_validator_evaluated": physical_validator_enabled,
+            "physical_max_clearance_loss_m": config.physical_validator_max_clearance_loss_m,
+            "physical_max_unknown_length_increase_m": (
+                config.physical_validator_max_unknown_length_increase_m
+            ),
+            "legacy_max_allowed_cost": round(max_allowed_cost, 4),
+            "selected_alpha": selected_alpha,
+            "selected_path": "raw_resampled" if selected_path is None else "candidate",
+            "raw": _metrics_for_log(raw_metrics),
+            "candidates": shadow_candidates,
+            "timing": {
+                "clearance_transform_ms": round(clearance_transform_ms, 4),
+                "candidate_evaluation_ms": round(candidate_evaluation_ms, 4),
+                "validator_total_ms": round((perf_counter() - validator_started) * 1000, 4),
+            },
+        }
         logger.info(
             "Candidate path validator shadow metrics.",
+            shadow_report=json.dumps(shadow_report, separators=(",", ":")),
             selected_alpha=None if selected_alpha is None else round(selected_alpha, 4),
             selected_path="raw_resampled" if selected_path is None else "candidate",
             legacy_max_allowed_cost=round(max_allowed_cost, 4),
-            raw=_metrics_for_log(raw_metrics),
-            candidates=shadow_candidates,
         )
+
+    if config.physical_validator_authoritative_enabled:
+        if physical_selected_alpha is None:
+            return raw_resampled
+        return candidate_paths_by_alpha[physical_selected_alpha]
 
     if selected_path is not None:
         return selected_path

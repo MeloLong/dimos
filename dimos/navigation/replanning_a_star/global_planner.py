@@ -118,6 +118,10 @@ class GlobalPlanner(Resource):
         path_smoothing_backtracking_factor: float = 0.5,
         path_smoothing_max_backtracking_steps: int = 3,
         path_smoothing_validator_shadow_enabled: bool = False,
+        path_smoothing_physical_validator_shadow_enabled: bool = False,
+        path_smoothing_physical_validator_authoritative_enabled: bool = False,
+        path_smoothing_physical_validator_max_clearance_loss_m: float = 0.025,
+        path_smoothing_physical_validator_max_unknown_length_increase_m: float = 0.0,
         path_resample_spacing_m: float = 0.1,
     ) -> None:
         self.path = Subject()
@@ -140,6 +144,16 @@ class GlobalPlanner(Resource):
             backtracking_factor=path_smoothing_backtracking_factor,
             max_backtracking_steps=path_smoothing_max_backtracking_steps,
             validator_shadow_enabled=path_smoothing_validator_shadow_enabled,
+            physical_validator_shadow_enabled=(path_smoothing_physical_validator_shadow_enabled),
+            physical_validator_authoritative_enabled=(
+                path_smoothing_physical_validator_authoritative_enabled
+            ),
+            physical_validator_max_clearance_loss_m=(
+                path_smoothing_physical_validator_max_clearance_loss_m
+            ),
+            physical_validator_max_unknown_length_increase_m=(
+                path_smoothing_physical_validator_max_unknown_length_increase_m
+            ),
         )
         self._navigation_map = NavigationMap(self._global_config, "voronoi")
         self._navigation_map_near = NavigationMap(self._global_config, "gradient")

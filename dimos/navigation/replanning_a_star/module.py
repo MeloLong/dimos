@@ -51,6 +51,12 @@ class ReplanningAStarPlannerConfig(ModuleConfig):
     path_smoothing_backtracking_factor: float = Field(default=0.5, gt=0.0, lt=1.0)
     path_smoothing_max_backtracking_steps: int = Field(default=3, ge=0)
     path_smoothing_validator_shadow_enabled: bool = False
+    path_smoothing_physical_validator_shadow_enabled: bool = False
+    path_smoothing_physical_validator_authoritative_enabled: bool = False
+    path_smoothing_physical_validator_max_clearance_loss_m: float = Field(default=0.025, ge=0.0)
+    path_smoothing_physical_validator_max_unknown_length_increase_m: float = Field(
+        default=0.0, ge=0.0
+    )
     path_resample_spacing_m: float = Field(default=0.1, gt=0.0)
 
 
@@ -107,6 +113,18 @@ class ReplanningAStarPlanner(Module, NavigationInterface):
             ),
             path_smoothing_validator_shadow_enabled=(
                 self.config.path_smoothing_validator_shadow_enabled
+            ),
+            path_smoothing_physical_validator_shadow_enabled=(
+                self.config.path_smoothing_physical_validator_shadow_enabled
+            ),
+            path_smoothing_physical_validator_authoritative_enabled=(
+                self.config.path_smoothing_physical_validator_authoritative_enabled
+            ),
+            path_smoothing_physical_validator_max_clearance_loss_m=(
+                self.config.path_smoothing_physical_validator_max_clearance_loss_m
+            ),
+            path_smoothing_physical_validator_max_unknown_length_increase_m=(
+                self.config.path_smoothing_physical_validator_max_unknown_length_increase_m
             ),
             path_resample_spacing_m=self.config.path_resample_spacing_m,
         )

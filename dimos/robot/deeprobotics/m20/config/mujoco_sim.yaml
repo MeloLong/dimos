@@ -159,6 +159,22 @@ replanningastarplanner:
   # the existing collision, cost, backtracking, or selected-path decision.
   path_smoothing_validator_shadow_enabled: true
 
+  # Run the Stage 2 physical policy beside the legacy mean-cost decision and
+  # record its selected alpha. This is diagnostic only while authoritative is false.
+  path_smoothing_physical_validator_shadow_enabled: true
+
+  # Keep false until Stage 2 batch, safety, and performance acceptance is complete.
+  # False guarantees that the legacy-selected path remains the controller output.
+  path_smoothing_physical_validator_authoritative_enabled: false
+
+  # Maximum candidate loss of minimum obstacle clearance relative to raw A*,
+  # in metres. 0.025 m is a provisional half-cell threshold under evaluation.
+  path_smoothing_physical_validator_max_clearance_loss_m: 0.025
+
+  # Maximum additional path length through unknown cells relative to raw A*,
+  # in metres. Normal navigation currently evaluates a strict zero-increase rule.
+  path_smoothing_physical_validator_max_unknown_length_increase_m: 0.0
+
   # Approximate spacing between final controller waypoints, in metres, > 0.
   # Smaller values preserve curves but increase message/controller work; larger
   # values reduce points but may under-represent tight bends.
