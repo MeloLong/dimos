@@ -57,6 +57,7 @@ class ReplanningAStarPlanner(Module, NavigationInterface):
     navigation_state: Out[String]  # TODO: set it
     nav_cmd_vel: Out[Twist]
     path: Out[Path]
+    raw_path: Out[Path]
     navigation_costmap: Out[OccupancyGrid]
 
     _planner: GlobalPlanner
@@ -116,6 +117,7 @@ class ReplanningAStarPlanner(Module, NavigationInterface):
             )
 
         self.register_disposable(self._planner.path.subscribe(self.path.publish))
+        self.register_disposable(self._planner.raw_path.subscribe(self.raw_path.publish))
 
         self.register_disposable(self._planner.cmd_vel.subscribe(self.nav_cmd_vel.publish))
 
