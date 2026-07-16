@@ -13,6 +13,8 @@
 # limitations under the License.
 
 
+from dataclasses import dataclass
+from itertools import pairwise
 import math
 
 import numpy as np
@@ -22,11 +24,35 @@ from dimos.msgs.geometry_msgs.Pose import Pose
 from dimos.msgs.geometry_msgs.PoseStamped import PoseStamped
 from dimos.msgs.geometry_msgs.Quaternion import Quaternion
 from dimos.msgs.geometry_msgs.Vector3 import Vector3
+from dimos.msgs.nav_msgs.OccupancyGrid import CostValues, OccupancyGrid
 from dimos.msgs.nav_msgs.Path import Path
 from dimos.utils.logging_config import setup_logger
 from dimos.utils.transform_utils import euler_to_quaternion
 
 logger = setup_logger()
+
+
+@dataclass(frozen=True)
+class ConstrainedPathSmoothingConfig:
+    spacing_m: float = 0.1
+    max_iterations: int = 40
+    data_weight: float = 0.02
+    smoothness_weight: float = 0.45
+    max_deviation_m: float = 0.1
+    collision_sample_spacing_m: float = 0.05
+    max_cost_increase: float = 2.0
+
+    def __post_init__(self) -> None:
+        if self.spacing_m <= 0 or self.collision_sample_spacing_m <= 0:
+            raise ValueError("Path smoothing sample spacing must be positive")
+        if self.max_iterations < 0 or self.max_deviation_m < 0:
+            raise ValueError("Path smoothing limits must be non-negative")
+        if not 0 <= self.data_weight <= 1:
+            raise ValueError("data_weight must be between 0 and 1")
+        if not 0 <= self.smoothness_weight <= 0.5:
+            raise ValueError("smoothness_weight must be between 0 and 0.5")
+        if self.max_cost_increase < 0:
+            raise ValueError("max_cost_increase must be non-negative")
 
 
 def _add_orientations_to_path(path: Path, goal_orientation: Quaternion) -> None:
@@ -141,6 +167,135 @@ def simple_resample_path(path: Path, goal_pose: Pose, spacing: float) -> Path:
     _add_orientations_to_path(ret, goal_pose.orientation)
 
     return ret
+
+
+def _effective_path_cost(
+    points: np.ndarray,
+    costmap: OccupancyGrid,
+    sample_spacing_m: float,
+) -> float | None:
+    """Return mean traversable cost, or None if a segment leaves the safe map."""
+    values: list[float] = []
+    for segment_index, (start, end) in enumerate(pairwise(points)):
+        length = float(np.linalg.norm(end - start))
+        sample_count = max(1, math.ceil(length / sample_spacing_m))
+        first_sample = 0 if segment_index == 0 else 1
+        for sample_index in range(first_sample, sample_count + 1):
+            ratio = sample_index / sample_count
+            point = start + ratio * (end - start)
+            grid_point = costmap.world_to_grid((float(point[0]), float(point[1]), 0.0))
+            grid_x = math.floor(grid_point.x)
+            grid_y = math.floor(grid_point.y)
+            if not (0 <= grid_x < costmap.width and 0 <= grid_y < costmap.height):
+                return None
+
+            value = int(costmap.grid[grid_y, grid_x])
+            if value >= CostValues.OCCUPIED:
+                return None
+            # Match min_cost_astar's default unknown penalty: 0.8 * 100.
+            values.append(80.0 if value == CostValues.UNKNOWN else max(0.0, float(value)))
+
+    return float(np.mean(values)) if values else 0.0
+
+
+def _path_from_xy(path: Path, points: np.ndarray) -> Path:
+    return Path(
+        frame_id=path.frame_id,
+        poses=[
+            PoseStamped(
+                frame_id=path.frame_id,
+                position=[float(point[0]), float(point[1]), 0.0],
+                orientation=Quaternion(0, 0, 0, 1),
+            )
+            for point in points
+        ],
+    )
+
+
+def constrained_smooth_resample_path(
+    path: Path,
+    goal_pose: Pose,
+    costmap: OccupancyGrid,
+    config: ConstrainedPathSmoothingConfig,
+) -> Path:
+    """Locally smooth a grid path while preserving its costmap corridor."""
+    raw_resampled = simple_resample_path(path, goal_pose, config.spacing_m)
+    if len(path) < 3 or config.max_iterations == 0 or config.max_deviation_m == 0:
+        return raw_resampled
+
+    original = np.array([[pose.x, pose.y] for pose in path.poses], dtype=np.float64)
+    duplicate = np.linalg.norm(np.diff(original, axis=0), axis=1) <= 1e-10
+    original = original[np.concatenate(([True], ~duplicate))]
+    if len(original) < 3:
+        return raw_resampled
+
+    raw_cost = _effective_path_cost(original, costmap, config.collision_sample_spacing_m)
+    if raw_cost is None:
+        logger.warning("Raw A* path failed constrained-smoothing validation; skipping smoothing.")
+        return raw_resampled
+
+    smoothed = original.copy()
+    reference_costs = [
+        _effective_path_cost(
+            original[index - 1 : index + 2],
+            costmap,
+            config.collision_sample_spacing_m,
+        )
+        for index in range(1, len(original) - 1)
+    ]
+    for _ in range(config.max_iterations):
+        max_change = 0.0
+        for index in range(1, len(smoothed) - 1):
+            current = smoothed[index]
+            candidate = current + config.data_weight * (original[index] - current)
+            candidate += config.smoothness_weight * (
+                smoothed[index - 1] + smoothed[index + 1] - 2 * current
+            )
+
+            offset = candidate - original[index]
+            offset_length = float(np.linalg.norm(offset))
+            if offset_length > config.max_deviation_m:
+                candidate = original[index] + offset * (config.max_deviation_m / offset_length)
+
+            candidate_points = np.vstack((smoothed[index - 1], candidate, smoothed[index + 1]))
+            reference_cost = reference_costs[index - 1]
+            candidate_cost = _effective_path_cost(
+                candidate_points,
+                costmap,
+                config.collision_sample_spacing_m,
+            )
+            if (
+                reference_cost is None
+                or candidate_cost is None
+                or candidate_cost > reference_cost + config.max_cost_increase
+            ):
+                continue
+
+            change = float(np.linalg.norm(candidate - current))
+            smoothed[index] = candidate
+            max_change = max(max_change, change)
+
+        if max_change < 1e-4:
+            break
+
+    candidate_path = simple_resample_path(
+        _path_from_xy(path, smoothed),
+        goal_pose,
+        config.spacing_m,
+    )
+    candidate_points = np.array(
+        [[pose.x, pose.y] for pose in candidate_path.poses], dtype=np.float64
+    )
+    candidate_cost = _effective_path_cost(
+        candidate_points,
+        costmap,
+        config.collision_sample_spacing_m,
+    )
+    if candidate_cost is None or candidate_cost > raw_cost + config.max_cost_increase:
+        logger.warning("Constrained path smoothing failed final validation; using raw A* path.")
+        return raw_resampled
+
+    return candidate_path
 
 
 def smooth_resample_path(
