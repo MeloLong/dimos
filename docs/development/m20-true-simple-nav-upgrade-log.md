@@ -819,6 +819,25 @@ the configured footprint envelope. Shadow data must be captured from fixed
 snapshots, the repeatable 69-goal sweep, narrow passages, and moving-obstacle
 scenarios before selecting enforcement thresholds.
 
+Implementation status: shadow mode is now available through
+`path_smoothing_validator_shadow_enabled`. It evaluates the raw-resampled path
+and every configured fractional alpha with identical swept sampling, emits one
+structured metrics record, and leaves the legacy selected path unchanged.
+Clearance is measured from the footprint-inflated lethal boundary; unknown
+length uses midpoint-weighted subsegments so it remains a metric quantity
+rather than a waypoint count. Enforcement thresholds remain intentionally
+unset until repeated simulation data is collected.
+
+The first live smoke sweep issued 49 goals from the fixed spawn and produced
+35 candidate sets. The unchanged legacy decision selected `alpha=1.0` for 28,
+`0.5` for 3, `0.25` for 2, and raw fallback for 2. Across 33 selected
+candidates, minimum clearance loss was exactly 0.0 m in this snapshot; P5
+clearance changed by a median -0.013 m and a worst -0.094 m. Unknown length
+changed by a median -0.015 m but increased by as much as 0.098 m, while unknown
+ratio increased by as much as 0.082. These are shadow observations, not chosen
+limits. Repeat fixed-map, narrow-passage, moving-obstacle, and real-map sweeps
+before enabling Stage 2.
+
 ##### Stage 2: Enforce A Physical Candidate Contract
 
 Keep the existing fraction schedule and select the largest candidate that

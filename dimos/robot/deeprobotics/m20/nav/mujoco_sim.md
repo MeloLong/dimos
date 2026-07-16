@@ -113,8 +113,14 @@ and one-off values can be overridden without editing either file:
 ```bash
 dimos run m20-dan-nav-sim --config /path/to/custom.json
 dimos run m20-dan-nav-sim \
-  --option m20mujocosimconnection.pointcloud_fps=1.0
+    --option m20mujocosimconnection.pointcloud_fps=1.0
 ```
+
+The simple-nav profile also enables candidate-validator shadow metrics. Every
+plan records raw and fractional-candidate clearance, unknown exposure, path
+length, cumulative turn, mean cost, failure reason, and selected alpha. Shadow
+mode evaluates diagnostics only; the existing `raw_mean_cost + 2.0` gate still
+selects the controller path.
 
 Use `m20-dan-nav` for the real M20 connection. The simulation blueprint does
 not include `M20Connection`, so starting it cannot send commands to the robot.

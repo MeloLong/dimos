@@ -13,12 +13,12 @@
 # limitations under the License.
 
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from itertools import pairwise
 import math
 
 import numpy as np
-from scipy.ndimage import uniform_filter1d
+from scipy.ndimage import distance_transform_edt, uniform_filter1d
 
 from dimos.msgs.geometry_msgs.Pose import Pose
 from dimos.msgs.geometry_msgs.PoseStamped import PoseStamped
@@ -43,6 +43,7 @@ class ConstrainedPathSmoothingConfig:
     max_cost_increase: float = 2.0
     backtracking_factor: float = 0.5
     max_backtracking_steps: int = 3
+    validator_shadow_enabled: bool = False
 
     def __post_init__(self) -> None:
         if self.spacing_m <= 0 or self.collision_sample_spacing_m <= 0:
@@ -59,6 +60,128 @@ class ConstrainedPathSmoothingConfig:
             raise ValueError("backtracking_factor must be between 0 and 1")
         if self.max_backtracking_steps < 0:
             raise ValueError("max_backtracking_steps must be non-negative")
+
+
+@dataclass(frozen=True)
+class PathPhysicalMetrics:
+    path_length_m: float
+    cumulative_turn_rad: float
+    min_clearance_m: float | None
+    p5_clearance_m: float | None
+    unknown_length_m: float
+    unknown_ratio: float
+    mean_cost: float | None
+    validation_reason: str | None
+
+
+def _lethal_clearance_grid(costmap: OccupancyGrid) -> np.ndarray | None:
+    lethal = costmap.grid >= CostValues.OCCUPIED
+    if not np.any(lethal):
+        return None
+    return distance_transform_edt(~lethal) * costmap.resolution
+
+
+def _sample_path_geometry(
+    points: np.ndarray,
+    sample_spacing_m: float,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Return endpoint samples plus midpoint samples and their represented lengths."""
+    if len(points) == 0:
+        empty = np.empty((0, 2), dtype=np.float64)
+        return empty, empty, np.empty(0, dtype=np.float64)
+    if len(points) == 1:
+        return points.copy(), np.empty((0, 2)), np.empty(0)
+
+    clearance_samples = [points[0]]
+    midpoint_samples: list[np.ndarray] = []
+    midpoint_lengths: list[float] = []
+    for start, end in pairwise(points):
+        segment = end - start
+        length = float(np.linalg.norm(segment))
+        if length <= 1e-10:
+            continue
+        sample_count = max(1, math.ceil(length / sample_spacing_m))
+        represented_length = length / sample_count
+        for sample_index in range(sample_count):
+            start_ratio = sample_index / sample_count
+            end_ratio = (sample_index + 1) / sample_count
+            midpoint_samples.append(start + (start_ratio + end_ratio) * 0.5 * segment)
+            midpoint_lengths.append(represented_length)
+            clearance_samples.append(start + end_ratio * segment)
+
+    return (
+        np.asarray(clearance_samples, dtype=np.float64),
+        np.asarray(midpoint_samples, dtype=np.float64).reshape(-1, 2),
+        np.asarray(midpoint_lengths, dtype=np.float64),
+    )
+
+
+def _path_physical_metrics(
+    points: np.ndarray,
+    costmap: OccupancyGrid,
+    sample_spacing_m: float,
+    clearance_grid: np.ndarray | None = None,
+) -> PathPhysicalMetrics:
+    segments = np.diff(points, axis=0) if len(points) > 1 else np.empty((0, 2))
+    segment_lengths = np.linalg.norm(segments, axis=1)
+    path_length = float(np.sum(segment_lengths))
+
+    nonzero_segments = segments[segment_lengths > 1e-10]
+    if len(nonzero_segments) > 1:
+        headings = np.arctan2(nonzero_segments[:, 1], nonzero_segments[:, 0])
+        heading_deltas = np.diff(headings)
+        heading_deltas = np.arctan2(np.sin(heading_deltas), np.cos(heading_deltas))
+        cumulative_turn = float(np.sum(np.abs(heading_deltas)))
+    else:
+        cumulative_turn = 0.0
+
+    clearance_samples, midpoint_samples, midpoint_lengths = _sample_path_geometry(
+        points, sample_spacing_m
+    )
+    clearances: list[float] = []
+    for point in clearance_samples:
+        grid_point = costmap.world_to_grid((float(point[0]), float(point[1]), 0.0))
+        grid_x = math.floor(grid_point.x)
+        grid_y = math.floor(grid_point.y)
+        if not (0 <= grid_x < costmap.width and 0 <= grid_y < costmap.height):
+            clearances.append(0.0)
+        elif clearance_grid is not None:
+            clearances.append(float(clearance_grid[grid_y, grid_x]))
+
+    unknown_length = 0.0
+    for point, represented_length in zip(midpoint_samples, midpoint_lengths, strict=True):
+        grid_point = costmap.world_to_grid((float(point[0]), float(point[1]), 0.0))
+        grid_x = math.floor(grid_point.x)
+        grid_y = math.floor(grid_point.y)
+        if (
+            0 <= grid_x < costmap.width
+            and 0 <= grid_y < costmap.height
+            and costmap.grid[grid_y, grid_x] == CostValues.UNKNOWN
+        ):
+            unknown_length += float(represented_length)
+
+    mean_cost, validation_reason = _path_cost_validation(
+        points,
+        costmap,
+        sample_spacing_m,
+    )
+    return PathPhysicalMetrics(
+        path_length_m=path_length,
+        cumulative_turn_rad=cumulative_turn,
+        min_clearance_m=min(clearances) if clearances else None,
+        p5_clearance_m=float(np.percentile(clearances, 5)) if clearances else None,
+        unknown_length_m=unknown_length,
+        unknown_ratio=unknown_length / path_length if path_length > 0 else 0.0,
+        mean_cost=mean_cost,
+        validation_reason=validation_reason,
+    )
+
+
+def _metrics_for_log(metrics: PathPhysicalMetrics) -> dict[str, float | str | None]:
+    return {
+        key: round(value, 4) if isinstance(value, float) else value
+        for key, value in asdict(metrics).items()
+    }
 
 
 def _add_orientations_to_path(path: Path, goal_orientation: Quaternion) -> None:
@@ -257,7 +380,26 @@ def _select_backtracked_path(
         costmap,
         config.collision_sample_spacing_m,
     )
+    clearance_grid = _lethal_clearance_grid(costmap) if config.validator_shadow_enabled else None
+    raw_metrics = (
+        _path_physical_metrics(
+            raw_resampled_points,
+            costmap,
+            config.collision_sample_spacing_m,
+            clearance_grid,
+        )
+        if config.validator_shadow_enabled
+        else None
+    )
     if baseline_cost is None:
+        if raw_metrics is not None:
+            logger.info(
+                "Candidate path validator shadow metrics.",
+                selected_alpha=None,
+                selected_path="raw_resampled",
+                raw=_metrics_for_log(raw_metrics),
+                candidates=[],
+            )
         logger.warning(
             "Raw-resampled baseline failed path validation; using raw-resampled A* path.",
             reason=baseline_failure_reason,
@@ -272,6 +414,9 @@ def _select_backtracked_path(
         config.backtracking_factor**step for step in range(config.max_backtracking_steps + 1)
     ]
     rejected_fractions: list[float] = []
+    selected_path: Path | None = None
+    selected_alpha: float | None = None
+    shadow_candidates: list[dict[str, object]] = []
 
     for fraction in fractions:
         blended = original + fraction * full_offset
@@ -289,33 +434,68 @@ def _select_backtracked_path(
         if candidate_cost is not None and candidate_cost > max_allowed_cost:
             rejection_reason = "cost_increase"
 
+        if config.validator_shadow_enabled:
+            candidate_metrics = _path_physical_metrics(
+                candidate_points,
+                costmap,
+                config.collision_sample_spacing_m,
+                clearance_grid,
+            )
+            shadow_candidates.append(
+                {
+                    "alpha": round(fraction, 4),
+                    "legacy_gate_passed": rejection_reason is None,
+                    "legacy_rejection_reason": rejection_reason,
+                    **_metrics_for_log(candidate_metrics),
+                }
+            )
+
         if rejection_reason is None:
             assert candidate_cost is not None
-            logger.info(
-                "Constrained path smoothing accepted.",
-                selected_fraction=round(fraction, 4),
-                baseline_cost=round(baseline_cost, 3),
-                candidate_cost=round(candidate_cost, 3),
-                max_allowed_cost=round(max_allowed_cost, 3),
-                rejected_fractions=rejected_fractions,
-                raw_points=len(original),
-                candidate_points=len(candidate_points),
-                max_deviation_m=round(
-                    float(np.max(np.linalg.norm(blended - original, axis=1))),
-                    3,
-                ),
-            )
-            return candidate_path
+            if selected_path is None:
+                selected_path = candidate_path
+                selected_alpha = fraction
+                logger.info(
+                    "Constrained path smoothing accepted.",
+                    selected_fraction=round(fraction, 4),
+                    baseline_cost=round(baseline_cost, 3),
+                    candidate_cost=round(candidate_cost, 3),
+                    max_allowed_cost=round(max_allowed_cost, 3),
+                    rejected_fractions=rejected_fractions,
+                    raw_points=len(original),
+                    candidate_points=len(candidate_points),
+                    max_deviation_m=round(
+                        float(np.max(np.linalg.norm(blended - original, axis=1))),
+                        3,
+                    ),
+                )
+                if not config.validator_shadow_enabled:
+                    return candidate_path
+            continue
 
-        rejected_fractions.append(round(fraction, 4))
+        if selected_path is None:
+            rejected_fractions.append(round(fraction, 4))
+            logger.info(
+                "Constrained path smoothing fraction rejected.",
+                fraction=round(fraction, 4),
+                reason=rejection_reason,
+                baseline_cost=round(baseline_cost, 3),
+                candidate_cost=None if candidate_cost is None else round(candidate_cost, 3),
+                max_allowed_cost=round(max_allowed_cost, 3),
+            )
+
+    if raw_metrics is not None:
         logger.info(
-            "Constrained path smoothing fraction rejected.",
-            fraction=round(fraction, 4),
-            reason=rejection_reason,
-            baseline_cost=round(baseline_cost, 3),
-            candidate_cost=None if candidate_cost is None else round(candidate_cost, 3),
-            max_allowed_cost=round(max_allowed_cost, 3),
+            "Candidate path validator shadow metrics.",
+            selected_alpha=None if selected_alpha is None else round(selected_alpha, 4),
+            selected_path="raw_resampled" if selected_path is None else "candidate",
+            legacy_max_allowed_cost=round(max_allowed_cost, 4),
+            raw=_metrics_for_log(raw_metrics),
+            candidates=shadow_candidates,
         )
+
+    if selected_path is not None:
+        return selected_path
 
     logger.warning(
         "All constrained smoothing fractions failed; using raw-resampled A* path.",

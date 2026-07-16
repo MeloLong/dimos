@@ -79,6 +79,7 @@ def test_true_simple_nav_sim_loads_constrained_smoothing_profile() -> None:
     )
 
     assert values["constrained_path_smoothing_enabled"] is True
+    assert values["path_smoothing_validator_shadow_enabled"] is True
     for name, value in values.items():
         assert planner.kwargs[name] == value
 

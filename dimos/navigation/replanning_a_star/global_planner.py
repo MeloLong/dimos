@@ -117,6 +117,7 @@ class GlobalPlanner(Resource):
         path_smoothing_max_cost_increase: float = 2.0,
         path_smoothing_backtracking_factor: float = 0.5,
         path_smoothing_max_backtracking_steps: int = 3,
+        path_smoothing_validator_shadow_enabled: bool = False,
         path_resample_spacing_m: float = 0.1,
     ) -> None:
         self.path = Subject()
@@ -138,6 +139,7 @@ class GlobalPlanner(Resource):
             max_cost_increase=path_smoothing_max_cost_increase,
             backtracking_factor=path_smoothing_backtracking_factor,
             max_backtracking_steps=path_smoothing_max_backtracking_steps,
+            validator_shadow_enabled=path_smoothing_validator_shadow_enabled,
         )
         self._navigation_map = NavigationMap(self._global_config, "voronoi")
         self._navigation_map_near = NavigationMap(self._global_config, "gradient")
