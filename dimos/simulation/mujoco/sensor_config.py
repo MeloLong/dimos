@@ -23,6 +23,7 @@ from dimos.simulation.mujoco.constants import (
     DEPTH_CAMERA_FOV,
     LIDAR_FPS,
     LIDAR_RESOLUTION,
+    MAX_RANGE,
     VIDEO_CAMERA_FOV,
     VIDEO_FPS,
     VIDEO_HEIGHT,
@@ -48,7 +49,8 @@ class MujocoSensorConfig(BaseConfig):
         min_length=1,
     )
     pointcloud_fov_deg: float = Field(default=DEPTH_CAMERA_FOV, gt=0, lt=180)
+    pointcloud_max_range_m: float = Field(default=MAX_RANGE, gt=0)
     pointcloud_voxel_size: float = Field(default=LIDAR_RESOLUTION, gt=0)
-    pointcloud_geom_groups: tuple[
-        Annotated[int, Field(ge=0, le=5)], ...
-    ] = Field(default=(0, 1, 2), min_length=1)
+    pointcloud_geom_groups: tuple[Annotated[int, Field(ge=0, le=5)], ...] = Field(
+        default=(0, 1, 2), min_length=1
+    )

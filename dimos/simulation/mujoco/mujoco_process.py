@@ -210,6 +210,7 @@ def _run_simulation(
                             data.cam_xpos[camera_id],
                             data.cam_xmat[camera_id].reshape(3, 3),
                             fov_degrees=sensor_config.pointcloud_fov_deg,
+                            max_range_m=sensor_config.pointcloud_max_range_m,
                         )
                         if points.size > 0:
                             all_points.append(points)

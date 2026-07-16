@@ -53,6 +53,10 @@ m20mujocosimconnection:
   # Vertical field of view for every synthetic depth camera, in degrees.
   pointcloud_fov_deg: 160.0
 
+  # Maximum retained depth hit distance in metres. The office profile uses
+  # 10 m so background surfaces behind moving objects can contribute map rays.
+  pointcloud_max_range_m: 10.0
+
   # Open3D voxel size used to downsample the merged point cloud, in metres.
   pointcloud_voxel_size: 0.05
 

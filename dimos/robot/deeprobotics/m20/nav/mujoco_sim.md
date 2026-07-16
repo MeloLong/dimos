@@ -81,6 +81,7 @@ comments in that file document every checked-in parameter.
 | `width`, `height`, `fps` | `640`, `360`, `10` | RGB/depth render size and RGB rate |
 | `enable_pointcloud` | `True` | Run depth renderers and publish the synthetic point cloud |
 | `pointcloud_fps` | `2` | Synthetic point-cloud rate |
+| `pointcloud_max_range_m` | `10` | Maximum retained depth hit distance for the office scene |
 | `pointcloud_camera_names` | front, left, right | MuJoCo cameras used for point-cloud generation |
 | `pointcloud_geom_groups` | `[0, 1]` | MuJoCo geometry groups visible to point-cloud cameras |
 | `pointcloud_fov_deg` | `160` | Depth projection field of view |

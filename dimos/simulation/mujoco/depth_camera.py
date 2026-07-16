@@ -29,6 +29,7 @@ def depth_image_to_point_cloud(
     camera_pos: NDArray[Any],
     camera_mat: NDArray[Any],
     fov_degrees: float = 120,
+    max_range_m: float = MAX_RANGE,
 ) -> NDArray[Any]:
     """
     Convert a depth image from a camera to a 3D point cloud using perspective projection.
@@ -38,7 +39,7 @@ def depth_image_to_point_cloud(
         camera_pos: 3D position of camera in world coordinates
         camera_mat: 3x3 camera rotation matrix in world coordinates
         fov_degrees: Vertical field of view of the camera in degrees
-        min_range: Minimum distance from camera to include points (meters)
+        max_range_m: Maximum radial point distance in meters
 
     Returns:
         numpy array of 3D points in world coordinates, shape (N, 3)
@@ -76,10 +77,9 @@ def depth_image_to_point_cloud(
 
     # y (index 1) is up here
     valid_mask = (
-        (np.abs(camera_points[:, 0]) <= MAX_RANGE)
+        (np.linalg.norm(camera_points, axis=1) <= max_range_m)
         & (np.abs(camera_points[:, 1]) <= MAX_HEIGHT)
         & (np.abs(camera_points[:, 2]) >= MIN_RANGE)
-        & (np.abs(camera_points[:, 2]) <= MAX_RANGE)
     )
     camera_points = camera_points[valid_mask]
 

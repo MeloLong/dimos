@@ -93,6 +93,7 @@ def test_true_simple_nav_sim_loads_checked_in_sensor_profile() -> None:
 
     assert simulator.kwargs == expected
     assert simulator.kwargs["person_collision_enabled"] is False
+    assert simulator.kwargs["pointcloud_max_range_m"] == 10.0
 
 
 def test_true_simple_nav_sim_loads_checked_in_moving_obstacle_profile() -> None:

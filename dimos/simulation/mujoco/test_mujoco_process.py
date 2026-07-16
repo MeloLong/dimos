@@ -3,6 +3,7 @@ from pydantic import ValidationError
 import pytest
 
 from dimos.core.global_config import GlobalConfig
+from dimos.simulation.mujoco.depth_camera import depth_image_to_point_cloud
 from dimos.simulation.mujoco.mujoco_process import _should_use_viewer
 from dimos.simulation.mujoco.sensor_config import MujocoSensorConfig
 from dimos.simulation.mujoco.shared_memory import ShmReader, ShmWriter
@@ -30,6 +31,7 @@ def test_display_allows_mujoco_viewer(monkeypatch) -> None:
         ("height", -1),
         ("fps", 0),
         ("pointcloud_fps", 0),
+        ("pointcloud_max_range_m", 0),
         ("pointcloud_voxel_size", 0),
     ],
 )
@@ -46,6 +48,40 @@ def test_sensor_config_rejects_invalid_pointcloud_geom_groups(groups) -> None:
 
 def test_sensor_config_keeps_legacy_mujoco_visible_groups_by_default() -> None:
     assert MujocoSensorConfig().pointcloud_geom_groups == (0, 1, 2)
+
+
+def test_depth_point_filter_uses_configured_max_range() -> None:
+    depth = np.zeros((2, 2), dtype=np.float32)
+    depth[1, 1] = 4.0
+    camera_pos = np.zeros(3)
+    camera_mat = np.eye(3)
+
+    legacy_points = depth_image_to_point_cloud(depth, camera_pos, camera_mat)
+    extended_points = depth_image_to_point_cloud(
+        depth,
+        camera_pos,
+        camera_mat,
+        max_range_m=5.0,
+    )
+
+    assert legacy_points.shape == (0, 3)
+    assert extended_points.shape == (1, 3)
+    np.testing.assert_allclose(extended_points[0], [0.0, 0.0, -4.0])
+
+
+def test_depth_point_filter_uses_radial_range() -> None:
+    depth = np.zeros((2, 4), dtype=np.float32)
+    depth[1, 0] = 4.0
+
+    points = depth_image_to_point_cloud(
+        depth,
+        np.zeros(3),
+        np.eye(3),
+        fov_degrees=53.130102,
+        max_range_m=5.0,
+    )
+
+    assert points.shape == (0, 3)
 
 
 def test_video_shared_memory_uses_configured_shape() -> None:
