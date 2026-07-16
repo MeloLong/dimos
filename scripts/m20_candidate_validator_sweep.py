@@ -361,9 +361,6 @@ def main() -> None:
             log_offset = args.log.stat().st_size
 
             if args.hold_position:
-                # Let LocalPlanner consume the new path before cancellation;
-                # stopping immediately can clear it between start and _loop().
-                time.sleep(args.post_plan_hold_s)
                 transport.publish(TELEOP_TOPIC, Twist.zero().lcm_encode())
                 # Let stop_movement cancellation finish before the next goal.
                 time.sleep(0.2)
@@ -394,6 +391,9 @@ def main() -> None:
                     time.sleep(0.02)
 
             if args.hold_position:
+                # Let LocalPlanner consume the new path before cancellation;
+                # stopping immediately can clear it between start and _loop().
+                time.sleep(args.post_plan_hold_s)
                 transport.publish(TELEOP_TOPIC, Twist.zero().lcm_encode())
                 # Close the final-goal control gap and let cancellation settle
                 # before recording odometry or starting the next case.
