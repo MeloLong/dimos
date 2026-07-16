@@ -64,7 +64,7 @@ replanningastarplanner:
   # Diagnostic switch: publish raw grid-cell A* output on /raw_path.
   # Enable only when comparing raw and smoothed paths in Rerun; it does not
   # alter the controller path. Disable during normal operation to reduce traffic.
-  publish_raw_path: false
+  publish_raw_path: true
 
   # Select the costmap-aware bounded smoother. False uses the legacy unconstrained
   # moving average. Changing this setting requires restarting DimOS.
