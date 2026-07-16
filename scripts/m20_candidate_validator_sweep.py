@@ -40,6 +40,15 @@ def _parse_shadow_line(line: str) -> dict[str, Any] | None:
         return None
 
     payload = line.split(SHADOW_MARKER, 1)[1].strip()
+    if "shadow_report=" in payload:
+        encoded = payload.split("shadow_report=", 1)[1].split(" ", 1)[0]
+        try:
+            if encoded.startswith(("'", '"')):
+                encoded = ast.literal_eval(encoded)
+            return json.loads(encoded)
+        except (json.JSONDecodeError, SyntaxError, ValueError):
+            return {"parse_error": line.rstrip()}
+
     try:
         candidates_text, remainder = payload.removeprefix("candidates=").split(
             " legacy_max_allowed_cost=", 1
@@ -97,7 +106,7 @@ def _distribution(values: list[float]) -> dict[str, float] | None:
 
 
 def _selected_metrics(shadow: dict[str, Any]) -> dict[str, Any] | None:
-    alpha = shadow.get("selected_alpha")
+    alpha = shadow.get("legacy_selected_alpha", shadow.get("selected_alpha"))
     if alpha is None:
         return None
     return next(
@@ -114,8 +123,19 @@ def _summarize(cases: list[dict[str, Any]], initial_odom: tuple[float, float]) -
     successful = [case for case in cases if case["status"] == "planned"]
     shadows = [case["shadow"] for case in successful if "parse_error" not in case["shadow"]]
     selections = Counter(
-        "raw" if shadow.get("selected_alpha") is None else str(shadow["selected_alpha"])
+        (
+            "raw"
+            if shadow.get("legacy_selected_alpha", shadow.get("selected_alpha")) is None
+            else str(shadow.get("legacy_selected_alpha", shadow.get("selected_alpha")))
+        )
         for shadow in shadows
+    )
+    physical_selections = Counter(
+        "raw"
+        if shadow.get("physical_selected_alpha") is None
+        else str(shadow["physical_selected_alpha"])
+        for shadow in shadows
+        if shadow.get("physical_validator_evaluated")
     )
 
     deltas: dict[str, list[float]] = {
@@ -128,6 +148,8 @@ def _summarize(cases: list[dict[str, Any]], initial_odom: tuple[float, float]) -
     }
     hard_invalid_candidates = 0
     unknown_increase_candidates = 0
+    physical_policy_violations = 0
+    physical_decision_matches = 0
     for shadow in shadows:
         raw = shadow["raw"]
         for candidate in shadow["candidates"]:
@@ -135,6 +157,10 @@ def _summarize(cases: list[dict[str, Any]], initial_odom: tuple[float, float]) -
             unknown_increase_candidates += (
                 candidate["unknown_length_m"] > raw["unknown_length_m"] + 1e-9
             )
+            if candidate.get("physical_gate_passed"):
+                physical_policy_violations += candidate.get("physical_rejection_reason") is not None
+
+        physical_decision_matches += shadow.get("physical_decision_matches_legacy") is True
 
         selected = _selected_metrics(shadow)
         if selected is None:
@@ -164,6 +190,9 @@ def _summarize(cases: list[dict[str, Any]], initial_odom: tuple[float, float]) -
         "planned": len(successful),
         "no_path_or_timeout": len(cases) - len(successful),
         "selection_counts": dict(sorted(selections.items())),
+        "physical_selection_counts": dict(sorted(physical_selections.items())),
+        "physical_decision_matches": physical_decision_matches,
+        "physical_policy_violations": physical_policy_violations,
         "max_odom_drift_m": round(max(odom_drift, default=0.0), 4),
         "hard_invalid_candidates": hard_invalid_candidates,
         "unknown_increase_candidates": unknown_increase_candidates,

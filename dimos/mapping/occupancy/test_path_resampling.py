@@ -13,6 +13,7 @@
 # limitations under the License.
 
 from dataclasses import replace
+import json
 from unittest.mock import patch
 
 import numpy as np
@@ -21,9 +22,11 @@ import pytest
 from dimos.mapping.occupancy.gradient import gradient
 from dimos.mapping.occupancy.path_resampling import (
     ConstrainedPathSmoothingConfig,
+    PathPhysicalMetrics,
     _lethal_clearance_grid,
     _path_physical_metrics,
     constrained_smooth_resample_path,
+    select_physical_path_candidate,
     simple_resample_path,
     smooth_resample_path,
 )
@@ -102,6 +105,117 @@ def test_path_physical_metrics_record_hard_failure_reason(points, expected_reaso
     assert metrics.validation_reason == expected_reason
 
 
+def _physical_metrics(
+    *,
+    clearance: float | None = 1.0,
+    unknown_length: float = 0.0,
+    validation_reason: str | None = None,
+) -> PathPhysicalMetrics:
+    return PathPhysicalMetrics(
+        path_length_m=4.0,
+        cumulative_turn_rad=1.0,
+        min_clearance_m=clearance,
+        p5_clearance_m=clearance,
+        unknown_length_m=unknown_length,
+        unknown_ratio=unknown_length / 4.0,
+        mean_cost=None if validation_reason else 1.0,
+        validation_reason=validation_reason,
+    )
+
+
+@pytest.mark.parametrize(
+    ("loss", "accepted"),
+    [(0.024999, True), (0.025, True), (0.025001, False)],
+)
+def test_physical_validator_clearance_threshold_boundary(loss, accepted) -> None:
+    selected, decisions = select_physical_path_candidate(
+        _physical_metrics(),
+        [(1.0, _physical_metrics(clearance=1.0 - loss))],
+        max_clearance_loss_m=0.025,
+        max_unknown_length_increase_m=0.0,
+    )
+
+    assert (selected == 1.0) is accepted
+    assert decisions[0].accepted is accepted
+    assert decisions[0].rejection_reason == (None if accepted else "clearance_loss")
+
+
+@pytest.mark.parametrize(
+    ("increase", "accepted"),
+    [(-0.01, True), (0.0, True), (0.000001, False)],
+)
+def test_physical_validator_unknown_exposure_boundary(increase, accepted) -> None:
+    selected, decisions = select_physical_path_candidate(
+        _physical_metrics(unknown_length=0.2),
+        [(1.0, _physical_metrics(unknown_length=0.2 + increase))],
+        max_clearance_loss_m=0.025,
+        max_unknown_length_increase_m=0.0,
+    )
+
+    assert (selected == 1.0) is accepted
+    assert decisions[0].accepted is accepted
+    assert decisions[0].rejection_reason == (None if accepted else "unknown_length_increase")
+
+
+@pytest.mark.parametrize("reason", ["lethal_cell", "out_of_bounds"])
+def test_physical_validator_always_rejects_hard_failures(reason) -> None:
+    selected, decisions = select_physical_path_candidate(
+        _physical_metrics(),
+        [(1.0, _physical_metrics(validation_reason=reason))],
+        max_clearance_loss_m=10.0,
+        max_unknown_length_increase_m=10.0,
+    )
+
+    assert selected is None
+    assert decisions[0].rejection_reason == reason
+
+
+def test_physical_validator_selects_largest_passing_alpha() -> None:
+    selected, decisions = select_physical_path_candidate(
+        _physical_metrics(),
+        [
+            (0.5, _physical_metrics(clearance=0.98)),
+            (0.25, _physical_metrics(clearance=0.99)),
+            (1.0, _physical_metrics(clearance=0.9)),
+        ],
+        max_clearance_loss_m=0.025,
+        max_unknown_length_increase_m=0.0,
+    )
+
+    assert selected == 0.5
+    assert [decision.accepted for decision in decisions] == [False, True, True]
+
+
+def test_physical_validator_falls_back_to_raw_when_all_candidates_fail() -> None:
+    selected, decisions = select_physical_path_candidate(
+        _physical_metrics(clearance=None),
+        [
+            (1.0, _physical_metrics(clearance=None, unknown_length=0.1)),
+            (0.5, _physical_metrics(clearance=None, validation_reason="lethal_cell")),
+        ],
+        max_clearance_loss_m=0.0,
+        max_unknown_length_increase_m=0.0,
+    )
+
+    assert selected is None
+    assert [decision.rejection_reason for decision in decisions] == [
+        "unknown_length_increase",
+        "lethal_cell",
+    ]
+
+
+def test_physical_validator_accepts_empty_metric_domain_without_hard_failure() -> None:
+    selected, decisions = select_physical_path_candidate(
+        _physical_metrics(clearance=None),
+        [(1.0, _physical_metrics(clearance=None))],
+        max_clearance_loss_m=0.0,
+        max_unknown_length_increase_m=0.0,
+    )
+
+    assert selected == 1.0
+    assert decisions[0].accepted
+
+
 def test_validator_shadow_records_all_alphas_without_changing_path() -> None:
     costmap = OccupancyGrid(grid=np.zeros((80, 80), dtype=np.int8), resolution=0.1)
     path = Path(
@@ -120,7 +234,11 @@ def test_validator_shadow_records_all_alphas_without_changing_path() -> None:
             path,
             goal,
             costmap,
-            replace(config, validator_shadow_enabled=True),
+            replace(
+                config,
+                validator_shadow_enabled=True,
+                physical_validator_shadow_enabled=True,
+            ),
         )
 
     legacy_points = np.array([[pose.x, pose.y] for pose in legacy_path.poses])
@@ -133,5 +251,11 @@ def test_validator_shadow_records_all_alphas_without_changing_path() -> None:
         if call.args[0] == "Candidate path validator shadow metrics."
     )
     assert shadow_call.kwargs["selected_alpha"] == 1.0
-    assert len(shadow_call.kwargs["candidates"]) == 4
-    assert shadow_call.kwargs["raw"]["path_length_m"] > 0.0
+    report = json.loads(shadow_call.kwargs["shadow_report"])
+    assert len(report["candidates"]) == 4
+    assert report["raw"]["path_length_m"] > 0.0
+    assert report["legacy_selected_alpha"] == 1.0
+    assert report["physical_selected_alpha"] == 1.0
+    assert report["physical_decision_matches_legacy"] is True
+    assert all("physical_gate_passed" in candidate for candidate in report["candidates"])
+    assert config.physical_validator_authoritative_enabled is False
