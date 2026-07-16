@@ -160,10 +160,66 @@ visibly retain raw grid bends, matching the reported poor-looking cases.
 
 The original warning confirmed fallback but did not record whether validation
 found a lethal/out-of-map sample or exceeded the configured mean-cost increase.
-The diagnostic now reports `reason`, raw/candidate/allowed cost, point counts,
-and actual maximum displacement without changing smoothing decisions. A new run
-is required to identify which rejection reason dominates before changing any
-safety threshold or smoothing parameter.
+Diagnostic commit `a5b45c48` added `reason`, raw/candidate/allowed cost, point
+counts, and actual maximum displacement without changing smoothing decisions.
+
+Two subsequent automated sweeps issued 69 goals and captured raw/output paths
+for every successful plan:
+
+| Result | Count | Meaning |
+| --- | ---: | --- |
+| Constrained-smoothed | 36 | Passed collision and final mean-cost validation. |
+| Raw-resampled fallback | 12 | Full smoothing candidate was rejected; raw A* topology was published. |
+| No path / timeout | 21 | Safe-goal or A* planning did not produce a path; not a smoothing failure. |
+
+All 13 fallback warnings in that process, including one additional manually
+issued goal, reported `reason=cost_increase`; none reported `lethal_cell` or
+`out_of_bounds`. The scripted candidates exceeded the configured `+2.0`
+allowance by 0.031 to 3.157 cost units, with a median excess of 0.53. This shows
+that the dominant failure is the all-or-nothing final mean-cost gate, not a
+collision-producing optimizer.
+
+For the 36 accepted paths, cumulative turn fell by a median 83.7% and path
+length by a median 4.3%. Fallback paths reduced turn by only 34.9% through
+uniform resampling and retained visible raw-grid corners. Some accepted paths
+still contain large V-shapes already present in raw A*; those are macro route
+topology/objective issues outside the 0.10 m local smoothing tube.
+
+![M20 simple-nav goal sweep](assets/m20-smoothing-goal-sweep-2.webp)
+
+#### Proposed Constrained Backtracking
+
+The first proposed backtracking implementation is **global fractional
+backtracking**, not local segment replacement. For every raw A* control point
+`R[i]` and fully smoothed point `S[i]`, evaluate:
+
+```text
+B[i, alpha] = R[i] + alpha * (S[i] - R[i])
+
+alpha = 1.0   full smoothing
+alpha = 0.5   half of every smoothing displacement
+alpha = 0.25  quarter of every smoothing displacement
+alpha = 0.0   raw A* geometry
+```
+
+Try decreasing `alpha` values and publish the largest fraction whose resampled
+path passes the unchanged lethal/out-of-map and `raw_cost + 2.0` checks. Start
+and goal remain fixed, route topology is unchanged, and every reduction in
+`alpha` also reduces point displacement from raw A*. Only when no nonzero
+fraction passes does the planner use the existing full raw fallback.
+
+This is deliberately conservative: all path corrections are reduced together,
+even if only one area raised the final mean cost. A future local-only repair
+could identify violating intervals and reduce smoothing only there, but the
+current validator reports a whole-path mean rather than a violating segment.
+Local repair would also need continuity checks at both interval boundaries and
+another whole-path validation. It should follow the simpler global mechanism
+only if test evidence shows that global fractional backtracking removes too
+much useful smoothing.
+
+Constrained backtracking addresses the current full-fallback defect. It does
+not straighten a large V-shaped raw A* route; turn-aware A* remains the next
+separate stage for those macro geometry cases.
 
 ## Evidence And Problems
 
