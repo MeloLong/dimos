@@ -838,6 +838,27 @@ ratio increased by as much as 0.082. These are shadow observations, not chosen
 limits. Repeat fixed-map, narrow-passage, moving-obstacle, and real-map sweeps
 before enabling Stage 2.
 
+The repeatable batch runner
+`scripts/m20_candidate_validator_sweep.py` then held odometry fixed and issued
+the same 49-goal grid for three dynamic and three clean-static rounds. Dynamic
+testing produced 85 plans from 147 requests; static testing produced 102. Both
+had 0.000 m maximum odometry drift and exactly one shadow record per successful
+plan. The legacy gate selected candidates with lower minimum clearance in
+24/85 dynamic and 21/102 static plans, and increased unknown length in 14/85
+and 15/102 respectively. Worst selected minimum-clearance loss was 0.039 m
+dynamic and 0.017 m static; worst unknown-length increase was 0.062 m and
+0.033 m. All 34 goals available in every static round had zero metric spread,
+while the moving-person runs showed expected map-dependent variation.
+
+These results support a provisional Stage 2 replay with collision/out-of-map
+as absolute rejects, strict non-increase of unknown length for normal
+navigation, and a 0.025 m relative minimum-clearance-loss limit (half the
+0.05 m costmap cell). P5 clearance and `raw_mean_cost + 2.0` remain diagnostic.
+Replay this proposed policy against the saved batch records before enabling it
+in live selection, then add narrow-passage and real localization/tracking-error
+evidence. Full results are under
+`docs/development/validation/candidate-validator-shadow/2026-07-16/`.
+
 ##### Stage 2: Enforce A Physical Candidate Contract
 
 Keep the existing fraction schedule and select the largest candidate that

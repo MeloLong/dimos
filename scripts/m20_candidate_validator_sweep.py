@@ -1,0 +1,337 @@
+#!/usr/bin/env python3
+"""Run repeatable M20 candidate-validator shadow sweeps over LCM."""
+
+from __future__ import annotations
+
+import argparse
+import ast
+from collections import Counter
+from itertools import pairwise
+import json
+import math
+from pathlib import Path
+import time
+from typing import Any
+
+import lcm
+import numpy as np
+
+from dimos.msgs.geometry_msgs.PointStamped import PointStamped
+from dimos.msgs.geometry_msgs.Twist import Twist
+from dimos.msgs.nav_msgs.Odometry import Odometry
+from dimos.msgs.nav_msgs.Path import Path as NavPath
+
+CLICK_TOPIC = "/clicked_point#geometry_msgs.PointStamped"
+TELEOP_TOPIC = "/tele_cmd_vel#geometry_msgs.Twist"
+ODOM_TOPIC = "/dimos/slam_odom#nav_msgs.Odometry"
+RAW_TOPIC = "/raw_path#nav_msgs.Path"
+PATH_TOPIC = "/path#nav_msgs.Path"
+SHADOW_MARKER = "Candidate path validator shadow metrics."
+
+DEFAULT_GOALS = [
+    (x, y)
+    for y in (-1.5, -0.5, 0.5, 1.5, 2.5, 3.5, 4.5)
+    for x in (-5.0, -4.0, -3.0, -2.0, -1.0, 0.0, 1.0)
+]
+
+
+def _parse_shadow_line(line: str) -> dict[str, Any] | None:
+    if SHADOW_MARKER not in line:
+        return None
+
+    payload = line.split(SHADOW_MARKER, 1)[1].strip()
+    try:
+        candidates_text, remainder = payload.removeprefix("candidates=").split(
+            " legacy_max_allowed_cost=", 1
+        )
+        legacy_cost_text, remainder = remainder.split(" raw=", 1)
+        raw_text, remainder = remainder.split(" selected_alpha=", 1)
+        alpha_text, selected_path = remainder.split(" selected_path=", 1)
+        return {
+            "candidates": ast.literal_eval(candidates_text),
+            "legacy_max_allowed_cost": float(legacy_cost_text),
+            "raw": ast.literal_eval(raw_text),
+            "selected_alpha": ast.literal_eval(alpha_text),
+            "selected_path": selected_path.strip(),
+        }
+    except (SyntaxError, ValueError):
+        try:
+            candidates_text, remainder = payload.removeprefix("candidates=").split(" raw=", 1)
+            raw_text, remainder = remainder.split(" selected_alpha=", 1)
+            alpha_text, selected_path = remainder.split(" selected_path=", 1)
+            return {
+                "candidates": ast.literal_eval(candidates_text),
+                "legacy_max_allowed_cost": None,
+                "raw": ast.literal_eval(raw_text),
+                "selected_alpha": ast.literal_eval(alpha_text),
+                "selected_path": selected_path.strip(),
+            }
+        except (SyntaxError, ValueError):
+            return {"parse_error": line.rstrip()}
+
+
+def _path_xy(path: NavPath) -> np.ndarray:
+    return np.array([[pose.x, pose.y] for pose in path.poses], dtype=np.float64)
+
+
+def _path_length(path: NavPath) -> float:
+    return sum(math.hypot(b.x - a.x, b.y - a.y) for a, b in pairwise(path.poses))
+
+
+def _path_turn(path: NavPath) -> float:
+    headings = [math.atan2(b.y - a.y, b.x - a.x) for a, b in pairwise(path.poses)]
+    return sum(abs(math.atan2(math.sin(b - a), math.cos(b - a))) for a, b in pairwise(headings))
+
+
+def _distribution(values: list[float]) -> dict[str, float] | None:
+    if not values:
+        return None
+    array = np.asarray(values, dtype=np.float64)
+    return {
+        "min": round(float(np.min(array)), 4),
+        "p05": round(float(np.percentile(array, 5)), 4),
+        "median": round(float(np.median(array)), 4),
+        "p95": round(float(np.percentile(array, 95)), 4),
+        "max": round(float(np.max(array)), 4),
+    }
+
+
+def _selected_metrics(shadow: dict[str, Any]) -> dict[str, Any] | None:
+    alpha = shadow.get("selected_alpha")
+    if alpha is None:
+        return None
+    return next(
+        (
+            candidate
+            for candidate in shadow.get("candidates", [])
+            if math.isclose(float(candidate["alpha"]), float(alpha))
+        ),
+        None,
+    )
+
+
+def _summarize(cases: list[dict[str, Any]], initial_odom: tuple[float, float]) -> dict[str, Any]:
+    successful = [case for case in cases if case["status"] == "planned"]
+    shadows = [case["shadow"] for case in successful if "parse_error" not in case["shadow"]]
+    selections = Counter(
+        "raw" if shadow.get("selected_alpha") is None else str(shadow["selected_alpha"])
+        for shadow in shadows
+    )
+
+    deltas: dict[str, list[float]] = {
+        "min_clearance_loss_m": [],
+        "p5_clearance_loss_m": [],
+        "unknown_length_increase_m": [],
+        "unknown_ratio_increase": [],
+        "path_length_change_m": [],
+        "cumulative_turn_change_rad": [],
+    }
+    hard_invalid_candidates = 0
+    unknown_increase_candidates = 0
+    for shadow in shadows:
+        raw = shadow["raw"]
+        for candidate in shadow["candidates"]:
+            hard_invalid_candidates += candidate["validation_reason"] is not None
+            unknown_increase_candidates += (
+                candidate["unknown_length_m"] > raw["unknown_length_m"] + 1e-9
+            )
+
+        selected = _selected_metrics(shadow)
+        if selected is None:
+            continue
+        if raw["min_clearance_m"] is not None and selected["min_clearance_m"] is not None:
+            deltas["min_clearance_loss_m"].append(
+                raw["min_clearance_m"] - selected["min_clearance_m"]
+            )
+        if raw["p5_clearance_m"] is not None and selected["p5_clearance_m"] is not None:
+            deltas["p5_clearance_loss_m"].append(raw["p5_clearance_m"] - selected["p5_clearance_m"])
+        deltas["unknown_length_increase_m"].append(
+            selected["unknown_length_m"] - raw["unknown_length_m"]
+        )
+        deltas["unknown_ratio_increase"].append(selected["unknown_ratio"] - raw["unknown_ratio"])
+        deltas["path_length_change_m"].append(selected["path_length_m"] - raw["path_length_m"])
+        deltas["cumulative_turn_change_rad"].append(
+            selected["cumulative_turn_rad"] - raw["cumulative_turn_rad"]
+        )
+
+    odom_drift = [
+        math.hypot(case["odom"][0] - initial_odom[0], case["odom"][1] - initial_odom[1])
+        for case in cases
+        if case["odom"] is not None
+    ]
+    return {
+        "cases": len(cases),
+        "planned": len(successful),
+        "no_path_or_timeout": len(cases) - len(successful),
+        "selection_counts": dict(sorted(selections.items())),
+        "max_odom_drift_m": round(max(odom_drift, default=0.0), 4),
+        "hard_invalid_candidates": hard_invalid_candidates,
+        "unknown_increase_candidates": unknown_increase_candidates,
+        "selected_deltas": {name: _distribution(values) for name, values in deltas.items()},
+    }
+
+
+def _arguments() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--rounds", type=int, default=3)
+    parser.add_argument("--goal-timeout-s", type=float, default=1.5)
+    parser.add_argument("--settle-s", type=float, default=0.15)
+    parser.add_argument(
+        "--log",
+        type=Path,
+        default=Path("/tmp/m20_true_simple_nav_sim.log"),
+        help="stdout log of the running shadow-enabled simulation",
+    )
+    parser.add_argument(
+        "--output",
+        type=Path,
+        default=Path("/tmp/m20-candidate-validator-sweep"),
+    )
+    parser.add_argument(
+        "--hold-position",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="publish zero teleop before every goal so navigation commands stay suppressed",
+    )
+    args = parser.parse_args()
+    if args.rounds < 1:
+        parser.error("--rounds must be at least 1")
+    if args.goal_timeout_s <= 0 or args.settle_s < 0:
+        parser.error("timeouts must be positive and settle time non-negative")
+    return args
+
+
+def main() -> None:
+    args = _arguments()
+    if not args.log.is_file():
+        raise SystemExit(f"Simulation log not found: {args.log}")
+
+    transport = lcm.LCM()
+    latest_odom: Odometry | None = None
+    latest_raw: NavPath | None = None
+    latest_path: NavPath | None = None
+    raw_sequence = 0
+    path_sequence = 0
+
+    def on_odom(_: str, data: bytes) -> None:
+        nonlocal latest_odom
+        latest_odom = Odometry.lcm_decode(data)
+
+    def on_raw(_: str, data: bytes) -> None:
+        nonlocal latest_raw, raw_sequence
+        path = NavPath.lcm_decode(data)
+        if path.poses:
+            latest_raw = path
+            raw_sequence += 1
+
+    def on_path(_: str, data: bytes) -> None:
+        nonlocal latest_path, path_sequence
+        path = NavPath.lcm_decode(data)
+        if path.poses:
+            latest_path = path
+            path_sequence += 1
+
+    transport.subscribe(ODOM_TOPIC, on_odom)
+    transport.subscribe(RAW_TOPIC, on_raw)
+    transport.subscribe(PATH_TOPIC, on_path)
+
+    deadline = time.monotonic() + 5.0
+    while latest_odom is None and time.monotonic() < deadline:
+        transport.handle_timeout(100)
+    if latest_odom is None:
+        raise SystemExit("No simulation odometry received")
+
+    args.output.mkdir(parents=True, exist_ok=True)
+    initial_odom = (latest_odom.x, latest_odom.y)
+    cases: list[dict[str, Any]] = []
+    print(f"initial_odom=({initial_odom[0]:.3f}, {initial_odom[1]:.3f})")
+
+    for round_index in range(1, args.rounds + 1):
+        for goal_index, (goal_x, goal_y) in enumerate(DEFAULT_GOALS, 1):
+            before_raw = raw_sequence
+            before_path = path_sequence
+            log_offset = args.log.stat().st_size
+
+            if args.hold_position:
+                transport.publish(TELEOP_TOPIC, Twist.zero().lcm_encode())
+                # Let stop_movement cancellation finish before the next goal.
+                time.sleep(0.2)
+            transport.publish(
+                CLICK_TOPIC,
+                PointStamped(goal_x, goal_y, 0.0, frame_id="world").lcm_encode(),
+            )
+
+            deadline = time.monotonic() + args.goal_timeout_s
+            while time.monotonic() < deadline:
+                transport.handle_timeout(50)
+                if raw_sequence > before_raw and path_sequence > before_path:
+                    break
+
+            log_deadline = time.monotonic() + 0.5
+            shadow_records: list[dict[str, Any]] = []
+            while time.monotonic() < log_deadline and not shadow_records:
+                new_log = args.log.read_bytes()[log_offset:].decode(errors="replace")
+                shadow_records = [
+                    record
+                    for line in new_log.splitlines()
+                    if (record := _parse_shadow_line(line)) is not None
+                ]
+                if not shadow_records:
+                    time.sleep(0.02)
+
+            odom = latest_odom
+            planned = raw_sequence > before_raw and path_sequence > before_path
+            if not planned or latest_raw is None or latest_path is None or not shadow_records:
+                result = {
+                    "round": round_index,
+                    "case": goal_index,
+                    "goal": [goal_x, goal_y],
+                    "status": "no_path_or_timeout",
+                    "odom": None if odom is None else [round(odom.x, 4), round(odom.y, 4)],
+                    "shadow_records": len(shadow_records),
+                }
+            else:
+                result = {
+                    "round": round_index,
+                    "case": goal_index,
+                    "goal": [goal_x, goal_y],
+                    "status": "planned",
+                    "odom": [round(odom.x, 4), round(odom.y, 4)],
+                    "raw_length_m": round(_path_length(latest_raw), 4),
+                    "output_length_m": round(_path_length(latest_path), 4),
+                    "raw_turn_rad": round(_path_turn(latest_raw), 4),
+                    "output_turn_rad": round(_path_turn(latest_path), 4),
+                    "shadow_records": len(shadow_records),
+                    "shadow": shadow_records[-1],
+                }
+                np.savez_compressed(
+                    args.output / f"round-{round_index:02d}-case-{goal_index:02d}.npz",
+                    goal=np.array([goal_x, goal_y]),
+                    odom=np.array(result["odom"]),
+                    raw=_path_xy(latest_raw),
+                    output=_path_xy(latest_path),
+                )
+            cases.append(result)
+            print(
+                f"round={round_index} case={goal_index:02d} goal=({goal_x:.1f},{goal_y:.1f}) "
+                f"status={result['status']} shadow={result['shadow_records']}"
+            )
+            time.sleep(args.settle_s)
+
+    report = {
+        "created_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+        "hold_position": args.hold_position,
+        "rounds": args.rounds,
+        "goals_per_round": len(DEFAULT_GOALS),
+        "initial_odom": list(initial_odom),
+        "summary": _summarize(cases, initial_odom),
+        "cases": cases,
+    }
+    report_path = args.output / "report.json"
+    report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
+    print(json.dumps(report["summary"], indent=2))
+    print(f"report={report_path}")
+
+
+if __name__ == "__main__":
+    main()
