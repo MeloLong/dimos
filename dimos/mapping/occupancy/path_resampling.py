@@ -250,6 +250,71 @@ def _metrics_for_log(metrics: PathPhysicalMetrics) -> dict[str, float | str | No
     }
 
 
+def _validator_metrics_enabled(config: ConstrainedPathSmoothingConfig) -> bool:
+    return (
+        config.validator_shadow_enabled
+        or config.physical_validator_shadow_enabled
+        or config.physical_validator_authoritative_enabled
+    )
+
+
+def _log_raw_only_validator_shadow(
+    path: Path,
+    costmap: OccupancyGrid,
+    config: ConstrainedPathSmoothingConfig,
+    *,
+    reason: str,
+) -> None:
+    if not _validator_metrics_enabled(config):
+        return
+
+    started = perf_counter()
+    points = np.array([[pose.x, pose.y] for pose in path.poses], dtype=np.float64).reshape(-1, 2)
+    clearance_started = perf_counter()
+    clearance_grid = _lethal_clearance_grid(costmap)
+    clearance_transform_ms = (perf_counter() - clearance_started) * 1000
+    metrics_started = perf_counter()
+    raw_metrics = _path_physical_metrics(
+        points,
+        costmap,
+        config.collision_sample_spacing_m,
+        clearance_grid,
+    )
+    candidate_evaluation_ms = (perf_counter() - metrics_started) * 1000
+    raw_valid = raw_metrics.validation_reason is None
+    physical_enabled = (
+        config.physical_validator_shadow_enabled or config.physical_validator_authoritative_enabled
+    )
+    shadow_report = {
+        "legacy_selected_alpha": None,
+        "physical_selected_alpha": None,
+        "physical_decision_matches_legacy": raw_valid if physical_enabled else None,
+        "physical_validator_evaluated": physical_enabled,
+        "physical_max_clearance_loss_m": config.physical_validator_max_clearance_loss_m,
+        "physical_max_unknown_length_increase_m": (
+            config.physical_validator_max_unknown_length_increase_m
+        ),
+        "legacy_max_allowed_cost": None,
+        "selected_alpha": None,
+        "selected_path": "raw_resampled",
+        "raw_baseline_valid": raw_valid,
+        "raw_only_reason": reason,
+        "raw": _metrics_for_log(raw_metrics),
+        "candidates": [],
+        "timing": {
+            "clearance_transform_ms": round(clearance_transform_ms, 4),
+            "candidate_evaluation_ms": round(candidate_evaluation_ms, 4),
+            "validator_total_ms": round((perf_counter() - started) * 1000, 4),
+        },
+    }
+    logger.info(
+        "Candidate path validator shadow metrics.",
+        shadow_report=json.dumps(shadow_report, separators=(",", ":")),
+        selected_alpha=None,
+        selected_path="raw_resampled",
+    )
+
+
 def _add_orientations_to_path(path: Path, goal_orientation: Quaternion) -> None:
     """Add orientations to path poses based on direction of movement.
 
@@ -370,6 +435,17 @@ def _path_cost_validation(
     sample_spacing_m: float,
 ) -> tuple[float | None, str | None]:
     """Return mean traversable cost and a failure reason when invalid."""
+    if len(points) == 1:
+        grid_point = costmap.world_to_grid((float(points[0, 0]), float(points[0, 1]), 0.0))
+        grid_x = math.floor(grid_point.x)
+        grid_y = math.floor(grid_point.y)
+        if not (0 <= grid_x < costmap.width and 0 <= grid_y < costmap.height):
+            return None, "out_of_bounds"
+        value = int(costmap.grid[grid_y, grid_x])
+        if value >= CostValues.OCCUPIED:
+            return None, "lethal_cell"
+        return (80.0 if value == CostValues.UNKNOWN else max(0.0, float(value))), None
+
     values: list[float] = []
     for segment_index, (start, end) in enumerate(pairwise(points)):
         length = float(np.linalg.norm(end - start))
@@ -481,6 +557,7 @@ def _select_backtracked_path(
                 ),
                 "selected_alpha": None,
                 "selected_path": "raw_resampled",
+                "raw_baseline_valid": False,
                 "raw": _metrics_for_log(raw_metrics),
                 "candidates": [],
                 "timing": {
@@ -628,6 +705,7 @@ def _select_backtracked_path(
             "legacy_max_allowed_cost": round(max_allowed_cost, 4),
             "selected_alpha": selected_alpha,
             "selected_path": "raw_resampled" if selected_path is None else "candidate",
+            "raw_baseline_valid": True,
             "raw": _metrics_for_log(raw_metrics),
             "candidates": shadow_candidates,
             "timing": {
@@ -671,12 +749,24 @@ def constrained_smooth_resample_path(
     """Locally smooth a grid path while preserving its costmap corridor."""
     raw_resampled = simple_resample_path(path, goal_pose, config.spacing_m)
     if len(path) < 3 or config.max_iterations == 0 or config.max_deviation_m == 0:
+        _log_raw_only_validator_shadow(
+            raw_resampled,
+            costmap,
+            config,
+            reason="smoothing_not_applicable",
+        )
         return raw_resampled
 
     original = np.array([[pose.x, pose.y] for pose in path.poses], dtype=np.float64)
     duplicate = np.linalg.norm(np.diff(original, axis=0), axis=1) <= 1e-10
     original = original[np.concatenate(([True], ~duplicate))]
     if len(original) < 3:
+        _log_raw_only_validator_shadow(
+            raw_resampled,
+            costmap,
+            config,
+            reason="duplicate_points_removed",
+        )
         return raw_resampled
 
     raw_cost, raw_failure_reason = _path_cost_validation(
@@ -685,6 +775,12 @@ def constrained_smooth_resample_path(
         config.collision_sample_spacing_m,
     )
     if raw_cost is None:
+        _log_raw_only_validator_shadow(
+            raw_resampled,
+            costmap,
+            config,
+            reason="raw_astar_validation_failed",
+        )
         logger.warning(
             "Raw A* path failed constrained-smoothing validation; skipping smoothing.",
             reason=raw_failure_reason,

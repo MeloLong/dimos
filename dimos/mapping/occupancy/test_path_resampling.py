@@ -93,6 +93,7 @@ def test_path_physical_metrics_use_distance_weighted_unknown_exposure() -> None:
     [
         (np.array([[1.5, 1.5], [1.5, 5.5]]), "lethal_cell"),
         (np.array([[-0.5, 1.5], [1.5, 1.5]]), "out_of_bounds"),
+        (np.array([[-0.5, 1.5]]), "out_of_bounds"),
     ],
 )
 def test_path_physical_metrics_record_hard_failure_reason(points, expected_reason) -> None:
@@ -214,6 +215,36 @@ def test_physical_validator_accepts_empty_metric_domain_without_hard_failure() -
 
     assert selected == 1.0
     assert decisions[0].accepted
+
+
+def test_raw_invalid_path_emits_shadow_record_before_smoothing_skip() -> None:
+    grid = np.zeros((80, 80), dtype=np.int8)
+    grid[20, :] = 100
+    costmap = OccupancyGrid(grid=grid, resolution=0.1)
+    path = Path(
+        frame_id="map",
+        poses=[PoseStamped(frame_id="map", position=[1.0, y, 0.0]) for y in (1.0, 2.0, 3.0)],
+    )
+    goal = Pose(position=[1.0, 3.0, 0.0])
+    config = ConstrainedPathSmoothingConfig(
+        validator_shadow_enabled=True,
+        physical_validator_shadow_enabled=True,
+    )
+
+    with patch("dimos.mapping.occupancy.path_resampling.logger.info") as log_info:
+        result = constrained_smooth_resample_path(path, goal, costmap, config)
+
+    assert result.poses
+    shadow_call = next(
+        call
+        for call in log_info.call_args_list
+        if call.args[0] == "Candidate path validator shadow metrics."
+    )
+    report = json.loads(shadow_call.kwargs["shadow_report"])
+    assert report["raw_baseline_valid"] is False
+    assert report["raw_only_reason"] == "raw_astar_validation_failed"
+    assert report["raw"]["validation_reason"] == "lethal_cell"
+    assert report["candidates"] == []
 
 
 def test_validator_shadow_records_all_alphas_without_changing_path() -> None:

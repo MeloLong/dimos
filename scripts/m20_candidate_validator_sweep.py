@@ -191,6 +191,7 @@ def _summarize(cases: list[dict[str, Any]], initial_odom: tuple[float, float]) -
         "status_counts": dict(sorted(Counter(case["status"] for case in cases).items())),
         "no_path_or_timeout": sum(case["status"] == "no_path_or_timeout" for case in cases),
         "shadow_record_mismatch": sum(case["status"] == "shadow_record_mismatch" for case in cases),
+        "raw_baseline_invalid": sum(case["status"] == "raw_baseline_invalid" for case in cases),
         "selection_counts": dict(sorted(selections.items())),
         "physical_selection_counts": dict(sorted(physical_selections.items())),
         "physical_decision_matches": physical_decision_matches,
@@ -337,7 +338,7 @@ def main() -> None:
 
             odom = latest_odom
             planned = raw_sequence > before_raw and path_sequence > before_path
-            if not planned or latest_raw is None or latest_path is None or not shadow_records:
+            if not planned or latest_raw is None or latest_path is None:
                 result = {
                     "round": round_index,
                     "case": goal_index,
@@ -354,6 +355,16 @@ def main() -> None:
                     "status": "shadow_record_mismatch",
                     "odom": [round(odom.x, 4), round(odom.y, 4)],
                     "shadow_records": len(shadow_records),
+                }
+            elif shadow_records[0].get("raw_baseline_valid") is False:
+                result = {
+                    "round": round_index,
+                    "case": goal_index,
+                    "goal": [goal_x, goal_y],
+                    "status": "raw_baseline_invalid",
+                    "odom": [round(odom.x, 4), round(odom.y, 4)],
+                    "shadow_records": 1,
+                    "shadow": shadow_records[0],
                 }
             else:
                 result = {
