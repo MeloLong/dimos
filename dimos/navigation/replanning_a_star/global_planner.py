@@ -62,6 +62,7 @@ def _has_stuck_path_progress(
 
 class GlobalPlanner(Resource):
     path: Subject[Path]
+    raw_path: Subject[Path]
     goal_reached: Subject[Bool]
 
     _current_odom: PoseStamped | None = None
@@ -101,6 +102,7 @@ class GlobalPlanner(Resource):
         path_cell_cost_weight: float = 3.0,
     ) -> None:
         self.path = Subject()
+        self.raw_path = Subject()
         self.goal_reached = Subject()
 
         self._global_config = global_config
@@ -183,6 +185,7 @@ class GlobalPlanner(Resource):
                 self._replan_limiter.reset()
 
         self.path.on_next(Path())
+        self.raw_path.on_next(Path())
         self._local_planner.stop_planning()
 
         if not but_will_try_again:
@@ -393,6 +396,9 @@ class GlobalPlanner(Resource):
             self.cancel_goal()
             return
 
+        # Keep the grid path visible for diagnostics; only the resampled path
+        # is consumed by LocalPlanner and sent to the movement stack.
+        self.raw_path.on_next(path)
         resampled_path = smooth_resample_path(path, current_goal, 0.1)
 
         self.path.on_next(resampled_path)
