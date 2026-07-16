@@ -11,6 +11,211 @@ This document records the observed simple-nav behavior, the candidate fixes,
 and the changes actually implemented. It separates verified facts from design
 options so later tuning and real-robot work can start from a known state.
 
+## System Architecture
+
+The simulation blueprint `m20_true_simple_nav_sim` is defined in
+`dimos/robot/deeprobotics/m20/nav/m20_true_simple_nav.py`. It wires the
+following modules together through `autoconnect`:
+
+```text
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         m20-true-simple-nav-sim                          │
+├─────────────────────────────────────────────────────────────────────────┤
+│  M20MujocoSimConnection                                                  │
+│      │ publishes: dimos/slam_odom, dimos/slam_aligned_points            │
+│      │ consumes: cmd_vel (from MovementManager)                         │
+│      ▼                                                                   │
+│  ┌─────────────────┐    ┌──────────────┐    ┌──────────────────────┐   │
+│  │ RayTracing      │───▶│ CostMapper   │───▶│ ReplanningAStar      │   │
+│  │ VoxelMap        │    │              │    │ Planner              │   │
+│  └─────────────────┘    └──────────────┘    └──────────┬───────────┘   │
+│                                                        │                │
+│                                                        ▼                │
+│                                              ┌──────────────────┐      │
+│                                              │ MovementManager  │      │
+│                                              │   (mux + relay)  │      │
+│                                              └────────┬─────────┘      │
+│                                                       │                 │
+│                                                       ▼                 │
+│                                              ┌──────────────────┐      │
+│                                              │ M20MujocoSimConn │      │
+│                                              │   (cmd_vel ► sim)│      │
+│                                              └──────────────────┘      │
+│                                                                          │
+│  Auxiliary: M20TF publishes transforms from dimos/slam_odom             │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+The blueprint is started with:
+
+```bash
+cd /home/markus/work/dimos_m20
+source .venv/bin/activate
+dimos --rerun-open none run m20-true-simple-nav-sim
+```
+
+The checked-in MuJoCo profile lives in
+`dimos/robot/deeprobotics/m20/config/mujoco_sim.yaml`.
+
+---
+
+## Planning and Control Pipeline
+
+This section decomposes the ReplanningAStarPlanner into its internal
+components. The pipeline is a single geometric path planner followed by a
+real-time tracking controller; there is no separate local trajectory
+optimizer.
+
+### 1. ReplanningAStarPlanner (Module wrapper)
+
+`dimos/navigation/replanning_a_star/module.py`
+
+| Input topic | Source | Purpose |
+|-------------|--------|---------|
+| `odometry` / `odom` | SLAM (`dimos/slam_odom`) | Robot pose for planning start and deviation checks |
+| `global_costmap` | CostMapper | Occupancy grid for A* and clearance checks |
+| `goal_request` / `target` / `clicked_point` | Rerun click or external goal | Target pose |
+| `stop_movement` | MovementManager | Teleop override – cancel active goal |
+
+| Output topic | Consumer | Purpose |
+|--------------|----------|---------|
+| `path` | LocalPlanner + Rerun | Resampled controller waypoints |
+| `raw_path` | Rerun (diagnostic) | Un-smoothed A* grid path when `publish_raw_path=True` |
+| `nav_cmd_vel` | MovementManager | Twist commands from LocalPlanner |
+| `goal_reached` | Upper layers | Boolean arrival signal |
+| `navigation_costmap` | Rerun (debug) | Gradient costmap when `DEBUG_NAVIGATION` is set |
+
+All tunable parameters are injected through `ReplanningAStarPlannerConfig`
+and forwarded to `GlobalPlanner`.
+
+### 2. GlobalPlanner
+
+`dimos/navigation/replanning_a_star/global_planner.py`
+
+This is the decision engine. It runs on its own monitoring thread (10 Hz)
+and owns:
+
+- **Dual navigation maps**
+  - `_navigation_map` (Voronoi) – used when goal distance > 1.5 m. Favours
+    corridors with extra obstacle clearance.
+  - `_navigation_map_near` (Gradient) – used when goal distance ≤ 1.5 m.
+    More direct to the target.
+
+- **Planning sequence** (`_plan_path()`)
+  ```text
+  1. _find_safe_goal(goal)
+        └─► If goal cell is UNKNOWN or OCCUPIED, BFS for nearest safe cell
+  2. _find_wide_path(safe_goal, robot_pos)
+        └─► Choose map (Voronoi vs Gradient) → run min_cost_astar()
+  3. Smooth / resample
+        ├─► Constrained mode: constrained_smooth_resample_path()
+        └─► Legacy mode:     smooth_resample_path()
+  4. Publish path → start LocalPlanner
+  ```
+
+- **Replan triggers** (monitored every 100 ms)
+
+  | Trigger | Condition | Result |
+  |---------|-----------|--------|
+  | Path deviation | Distance from odometry to published path > 0.9 m | Full remaining route replan |
+  | Stuck (progress) | 8 s with < 0.2 m cumulative path progress, linear cmd > 0.1 m/s, and goal > 0.5 m away | Full remaining route replan |
+  | Obstacle ahead | LocalPlanner detects lethal cell within next 3 m | Stop → replan |
+  | Controller error | LocalPlanner thread raises exception | Stop → replan |
+  | Arrival | Distance < 0.2 m and yaw error < 15° | Clear goal, signal arrived |
+
+  **Important:** every recovery replan regenerates the **entire remaining
+  global path** from the current odometry to the original goal. It is not a
+  local segment repair.
+
+- **Replan safeguard:** `ReplanLimiter` allows at most 6 retry attempts
+  while the robot stays within 2 m of the first retry position. After the
+  limit the goal is cancelled instead of retrying forever.
+
+### 3. A* Pathfinder
+
+`dimos/navigation/replanning_a_star/min_cost_astar.py`
+
+- 8-connected grid with Octile distance heuristic.
+- C++ extension (`min_cost_astar_ext`) is used when available; Python
+  fallback preserves identical semantics.
+- Edge objective (P1 upgrade):
+  ```text
+  objective = distance_weight * move_distance
+            + cell_cost_weight * (cell_cost / cost_threshold)
+  ```
+  M20 MuJoCo defaults: `distance_weight=1.0`, `cell_cost_weight=3.0`.
+- Unknown cells: cost = `cost_threshold * unknown_penalty` = `100 * 0.8 = 80`.
+  Traversable but penalised.
+
+### 4. LocalPlanner + PController
+
+`dimos/navigation/replanning_a_star/local_planner.py`
+`dimos/navigation/replanning_a_star/controllers.py`
+
+LocalPlanner runs a 10 Hz control loop with the following state machine:
+
+```text
+┌─────────────┐    yaw aligned    ┌────────────────┐    near goal    ┌────────────────┐
+│   idle      │──────────────────▶│ path_following │───────────────▶│ final_rotation │
+└─────────────┘                   └────────────────┘                └────────────────┘
+        │                                 │                                 │
+        │   new path                      │   obstacle / error              │   yaw aligned
+        ▼                                 ▼                                 ▼
+   initial_rotation ─────────────────────┘                            arrived
+```
+
+Each cycle:
+1. Update `PathClearance` costmap and current pose index.
+2. **Obstacle check:** `PathClearance.is_obstacle_ahead()` scans the next
+   3 m of the path footprint against the binary costmap. If any cell is
+   `OCCUPIED (100)`, signal `obstacle_found` and stop.
+3. Compute `cmd_vel` according to state:
+
+   - **`initial_rotation`:** rotate in place until heading aligns with the
+     first path segment (tolerance 0.35 rad ≈ 20°).
+   - **`path_following`:**
+     - Find closest path point (`PathDistancer`).
+     - If distance to goal < 0.2 m → switch to `final_rotation`.
+     - Else compute lookahead point and call `PController.advance()`.
+   - **`final_rotation`:** rotate in place until yaw error < 0.35 rad.
+
+#### PController behaviour
+
+- **Rotate-then-drive** strategy:
+  - If |yaw error| > 90° → pure rotation (`angular = k_angular * yaw_error`).
+  - Else → drive forward with speed scaled by heading alignment:
+    ```text
+    linear  = speed * (1 - |yaw_error| / 90°)
+    angular = k_angular * yaw_error
+    ```
+- Minimum velocity thresholds: `min_linear = 0.2 m/s`, `min_angular = 0.2 rad/s`
+  (raised to `0.6 rad/s` for real M20).
+- Simulation boost: if |angular| < 0.8 rad/s in sim, clamp to 0.8 to avoid
+  stall.
+
+### 5. MovementManager
+
+`dimos/navigation/movement_manager/movement_manager.py`
+
+- Muxes two velocity sources:
+  - `nav_cmd_vel` – planner output (default).
+  - `tele_cmd_vel` – keyboard / joystick teleop (priority override).
+- Teleop activation starts a `tele_cooldown_sec = 1.0 s` window during
+  which nav commands are ignored.
+- Any teleop input also publishes `stop_movement=True`, which cancels the
+  active planner goal.
+
+### 6. PathClearance (forward obstacle detection)
+
+`dimos/navigation/replanning_a_star/path_clearance.py`
+
+- Builds a swept-area mask (`make_path_mask`) over the next 3 m of path,
+  inflated by `robot_width`.
+- Checks whether any cell inside the mask equals `CostValues.OCCUPIED (100)`.
+- **Note:** unknown cells (`-1`) are **not** treated as obstacles here,
+  even though A* may route through them at a penalty.
+
+
 ## Current Planning Chain
 
 ```text
@@ -281,6 +486,68 @@ much useful smoothing.
 Constrained backtracking addresses the current full-fallback defect. It does
 not straighten a large V-shaped raw A* route; turn-aware A* remains the next
 separate stage for those macro geometry cases.
+
+#### Planned Upgrade: Physical Validation Before Turn-Aware A*
+
+The current geometry generator should remain in place for the next stage.
+When accepted, it has reduced cumulative turn by roughly 84-89%, and global
+fractional backtracking has reduced complete fallback from about 77.1% to
+10.2% in the primary repeated sweep. Replacing it with another spline or
+visibility-shortcut algorithm now would mix geometry generation, safety
+validation, and raw-route topology in one change.
+
+##### Stage 1: Physical Metrics In Shadow Mode
+
+Add one validator result for each raw-resampled and fractional candidate while
+leaving the current decision unchanged. Record:
+
+- minimum and low-percentile clearance from the footprint-inflated lethal
+  boundary, in metres;
+- unknown-space path length and path ratio;
+- path length, cumulative turn, selected fraction, and the existing mean
+  gradient/Voronoi cost;
+- collision and out-of-map failure reasons.
+
+The clearance map can use the same Euclidean distance transform already used
+by occupancy-gradient generation. Because A* receives a map inflated by the
+robot footprint, this value represents additional centre-path clearance beyond
+the configured footprint envelope. Shadow data must be captured from fixed
+snapshots, the repeatable 69-goal sweep, narrow passages, and moving-obstacle
+scenarios before selecting enforcement thresholds.
+
+##### Stage 2: Enforce A Physical Candidate Contract
+
+Keep the existing fraction schedule and select the largest candidate that
+satisfies all hard rules:
+
+1. Reject every lethal or out-of-map swept sample.
+2. Bound candidate clearance loss relative to raw-resampled A* in metres and
+   enforce a configured absolute minimum where the map supports it.
+3. For normal navigation, do not allow smoothing to increase unknown-space
+   exposure. Exploration requires a separate explicit policy.
+4. Keep the `raw_mean_cost + 2.0` result as a diagnostic during migration, then
+   remove it as a hard gate after snapshot and live regressions pass.
+
+Candidate generation and global fractional backtracking do not change in this
+stage. This isolates the effect of replacing an opaque map-cost allowance with
+quantities that can be related to map resolution, footprint uncertainty,
+localization error, and measured tracking error.
+
+##### Stage 3: Reduce Macro Bends In Raw A*
+
+After candidate validation is stable, extend A* state from `(x, y)` to
+`(x, y, incoming_direction)` and add an optional non-negative turn cost. Keep
+the geometric-distance and cell-cost terms, and keep the distance-only
+heuristic admissible. Implement equivalent Python and C++ behavior, with zero
+turn weight preserving the current route.
+
+Turn-aware A* should reduce direction alternation and large V-shaped detours
+already visible on `/raw_path`; the existing constrained smoother then rounds
+the remaining local grid corners. Validate path length, minimum clearance,
+unknown exposure, cumulative turn, planning latency, and Python/C++ parity.
+Do not add Hybrid A*, Theta*, or local-segment rollback unless these measured
+stages leave a specific unresolved failure: they add materially more state or
+can erase the cost corridor without current evidence that they are required.
 
 ## Evidence And Problems
 
