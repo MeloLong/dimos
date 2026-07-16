@@ -297,12 +297,16 @@ class ModuleCoordinator(Resource):
         cls,
         blueprint: Blueprint,
         blueprint_args: MutableMapping[str, Any] | None = None,
+        *,
+        reject_existing_service: bool = False,
     ) -> ModuleCoordinator:
         logger.info("Building the blueprint")
         global_config.update(**dict(blueprint.global_config_overrides))
         blueprint_args = blueprint_args or {}
         if "g" in blueprint_args:
             global_config.update(**blueprint_args.pop("g"))
+        if reject_existing_service:
+            CoordinatorRPC.ensure_no_existing_service()
         transport_overrides = blueprint_args.pop("transports", None) or {}
         transports = _materialize_transports(blueprint, transport_overrides)
 

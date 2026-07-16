@@ -92,9 +92,13 @@ def test_moving_obstacle_starts_timer_and_releases_transport() -> None:
 
 
 @pytest.mark.mujoco
-def test_random_walk_pose_drives_collidable_pointcloud_person() -> None:
+def test_random_walk_pose_drives_noncolliding_pointcloud_person() -> None:
     scene_path = get_data("mujoco_sim") / "scene_office1.xml"
-    xml = get_model_xml("unitree_go1", scene_path.read_text(encoding="utf-8"))
+    xml = get_model_xml(
+        "unitree_go1",
+        scene_path.read_text(encoding="utf-8"),
+        person_collision_enabled=False,
+    )
     model = mujoco.MjModel.from_xml_string(xml, assets=get_assets())
     data = mujoco.MjData(model)
     person_body_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "person")
@@ -117,8 +121,8 @@ def test_random_walk_pose_drives_collidable_pointcloud_person() -> None:
     )
     assert person_geom_ids
     assert all(int(model.geom_group[geom_id]) == 0 for geom_id in person_geom_ids)
-    assert all(int(model.geom_contype[geom_id]) == 1 for geom_id in person_geom_ids)
-    assert all(int(model.geom_conaffinity[geom_id]) == 1 for geom_id in person_geom_ids)
+    assert all(int(model.geom_contype[geom_id]) == 0 for geom_id in person_geom_ids)
+    assert all(int(model.geom_conaffinity[geom_id]) == 0 for geom_id in person_geom_ids)
 
 
 @pytest.mark.parametrize(

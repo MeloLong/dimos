@@ -367,7 +367,11 @@ def run(
     if cli_config_overrides:
         kwargs["g"] = cli_config_overrides
 
-    coordinator = ModuleCoordinator.build(blueprint, kwargs)
+    coordinator = ModuleCoordinator.build(
+        blueprint,
+        kwargs,
+        reject_existing_service=True,
+    )
 
     if daemon:
         # Health check before daemonizing — catch early crashes

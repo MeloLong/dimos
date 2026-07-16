@@ -87,7 +87,12 @@ def _run_simulation(
         robot_name = "unitree_go1"
 
     controller = MockController(shm)
-    model, data = load_model(controller, robot=robot_name, scene_xml=load_scene_xml(config))
+    model, data = load_model(
+        controller,
+        robot=robot_name,
+        scene_xml=load_scene_xml(config),
+        person_collision_enabled=config.mujoco_person_collision_enabled,
+    )
 
     if model is None or data is None:
         raise ValueError("Failed to load MuJoCo model: model or data is None")
@@ -141,9 +146,7 @@ def _run_simulation(
         color_scene_option = mujoco.MjvOption()
         pointcloud_scene_option = mujoco.MjvOption()
         pointcloud_scene_option.geomgroup[:] = 0
-        pointcloud_scene_option.geomgroup[
-            list(sensor_config.pointcloud_geom_groups)
-        ] = 1
+        pointcloud_scene_option.geomgroup[list(sensor_config.pointcloud_geom_groups)] = 1
 
         # Timing control
         last_video_time = float("-inf")

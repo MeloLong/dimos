@@ -37,7 +37,7 @@ class CoordinatorRPC:
     @classmethod
     def serve(cls, coordinator: RPCInspectable) -> CoordinatorRPC:
         """Publish `coordinator`'s @rpc methods under the `Coordinator/` prefix."""
-        cls._ensure_no_existing_service()
+        cls.ensure_no_existing_service()
         rpc = rpc_backend()()
         # start() before serve_module_rpc(): Zenoh's subscribe needs an open
         # session (acquired in start()), whereas LCM tolerates either order.
@@ -78,7 +78,8 @@ class CoordinatorRPC:
             logger.error("Error closing Coordinator RPC service", exc_info=True)
 
     @classmethod
-    def _ensure_no_existing_service(cls) -> None:
+    def ensure_no_existing_service(cls) -> None:
+        """Fail before startup when another top-level coordinator is active."""
         probe = rpc_backend()()
         probe.start()
         try:

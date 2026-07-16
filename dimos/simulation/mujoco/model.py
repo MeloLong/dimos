@@ -58,11 +58,19 @@ def get_assets() -> dict[str, bytes]:
 
 
 def load_model(
-    input_device: InputController, robot: str, scene_xml: str
+    input_device: InputController,
+    robot: str,
+    scene_xml: str,
+    *,
+    person_collision_enabled: bool = True,
 ) -> tuple[mujoco.MjModel, mujoco.MjData]:
     mujoco.set_mjcb_control(None)
 
-    xml_string = get_model_xml(robot, scene_xml)
+    xml_string = get_model_xml(
+        robot,
+        scene_xml,
+        person_collision_enabled=person_collision_enabled,
+    )
     model = mujoco.MjModel.from_xml_string(xml_string, assets=get_assets())
     data = mujoco.MjData(model)
 
@@ -100,7 +108,12 @@ def load_model(
     return model, data
 
 
-def get_model_xml(robot: str, scene_xml: str) -> str:
+def get_model_xml(
+    robot: str,
+    scene_xml: str,
+    *,
+    person_collision_enabled: bool = True,
+) -> str:
     root = ET.fromstring(scene_xml)
     root.set("model", f"{robot}_scene")
     root.insert(0, ET.Element("include", file=f"{robot}.xml"))
@@ -115,12 +128,12 @@ def get_model_xml(robot: str, scene_xml: str) -> str:
     map_elem.set("znear", "0.01")
     map_elem.set("zfar", "10000")
 
-    _add_person_object(root)
+    _add_person_object(root, collision_enabled=person_collision_enabled)
 
     return ET.tostring(root, encoding="unicode")
 
 
-def _add_person_object(root: ET.Element) -> None:
+def _add_person_object(root: ET.Element, *, collision_enabled: bool) -> None:
     asset = root.find("asset")
 
     if asset is None:
@@ -144,6 +157,8 @@ def _add_person_object(root: ET.Element) -> None:
         mesh="person_mesh",
         material="person_material",
         euler="1.5708 0 0",
+        contype="1" if collision_enabled else "0",
+        conaffinity="1" if collision_enabled else "0",
     )
 
 

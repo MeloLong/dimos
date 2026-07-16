@@ -44,6 +44,7 @@ class M20MujocoSimConfig(ModuleConfig, MujocoSensorConfig):
 
     publish_front_image: bool = True
     publish_rear_image: bool = False
+    person_collision_enabled: bool = False
 
     @model_validator(mode="after")
     def validate_image_publication(self) -> M20MujocoSimConfig:
@@ -76,7 +77,12 @@ class M20MujocoSimConnection(Module):
 
         # Keep the DimOS/Rerun viewer available while forcing MuJoCo itself to
         # run as a background data source without opening its own window.
-        sim_config = self.config.g.model_copy(update={"viewer": "none"})
+        sim_config = self.config.g.model_copy(
+            update={
+                "viewer": "none",
+                "mujoco_person_collision_enabled": self.config.person_collision_enabled,
+            }
+        )
         self.connection = MujocoConnection(sim_config, self.config.sensor_config())
         self.connection.start()
 

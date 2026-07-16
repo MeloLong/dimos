@@ -46,6 +46,10 @@ m20mujocosimconnection:
     - 0
     - 1
 
+  # Keep the moving mocap person visible to RGB/depth/point clouds without
+  # allowing its kinematic, effectively infinite-mass body to push over Go1.
+  person_collision_enabled: false
+
   # Vertical field of view for every synthetic depth camera, in degrees.
   pointcloud_fov_deg: 160.0
 

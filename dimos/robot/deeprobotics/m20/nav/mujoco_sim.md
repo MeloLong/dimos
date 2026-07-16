@@ -32,9 +32,11 @@ planning/control integration test, not an M20 dynamics validation.
 
 The simulation also enables one person-shaped moving obstacle. It reuses the
 existing MuJoCo mocap person and `/person_pose` transport, so the obstacle is
-visible to RGB and synthetic point clouds and participates in collisions. A
-fixed random seed chooses between adjacent edges of an office path already used
-by the MuJoCo person-follow tests. Disable it with
+visible to RGB and synthetic point clouds. Physical contact is disabled by
+default because a prescribed mocap body has effectively infinite mass and can
+push over the Go1 instead of testing perception and replanning. A fixed random
+seed chooses between adjacent edges of an office path already used by the
+MuJoCo person-follow tests. Disable the obstacle with
 `--option m20movingobstacle.enabled=false` when comparing against a static map.
 
 `m20-dan-nav-sim` runs the WD M20 Dan navigation stack against the existing

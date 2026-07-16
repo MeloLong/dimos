@@ -785,6 +785,25 @@ def test_start_rpc_service_responds_to_ping(dynamic_coordinator) -> None:
         client.stop()
 
 
+def test_build_rejects_existing_service_before_starting_workers(mocker) -> None:
+    reject = mocker.patch.object(
+        CoordinatorRPC,
+        "ensure_no_existing_service",
+        side_effect=RuntimeError("already running"),
+    )
+    start = mocker.patch.object(ModuleCoordinator, "start")
+
+    with pytest.raises(RuntimeError, match="already running"):
+        ModuleCoordinator.build(
+            autoconnect(ModuleA.blueprint()),
+            dict(_BUILD_WITHOUT_RERUN),
+            reject_existing_service=True,
+        )
+
+    reject.assert_called_once_with()
+    start.assert_not_called()
+
+
 def test_list_module_names(dynamic_coordinator) -> None:
     assert dynamic_coordinator.list_module_names() == []
     dynamic_coordinator.load_module(ModuleA)
