@@ -1,8 +1,10 @@
 # Candidate Validator Shadow Batch Report
 
-Date: 2026-07-16  
-Branch: `wd/m20-mujoco-simulation`  
-Stage 1 commit: `9b6bd880`
+- Date: 2026-07-16
+- Branch: `wd/m20-mujoco-simulation`
+- Stage 1 metrics commit: `9b6bd880`
+- Batch validation commit: `f7fbfdb7`
+- Status: Stage 1 complete; Stage 2 physical-policy replay pending
 
 ## Method
 
@@ -21,6 +23,8 @@ The 49-goal grid was repeated three times in two conditions:
 The first static attempt is excluded. Its original 50 ms teleop-to-goal delay
 allowed one cancellation callback to overlap a new goal. The tool now waits
 200 ms; the clean rerun produced no new assertion and zero odometry drift.
+
+![Candidate validator batch comparison](candidate-validator-batch-summary.png)
 
 ## Results
 

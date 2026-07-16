@@ -838,25 +838,72 @@ ratio increased by as much as 0.082. These are shadow observations, not chosen
 limits. Repeat fixed-map, narrow-passage, moving-obstacle, and real-map sweeps
 before enabling Stage 2.
 
-The repeatable batch runner
-`scripts/m20_candidate_validator_sweep.py` then held odometry fixed and issued
-the same 49-goal grid for three dynamic and three clean-static rounds. Dynamic
-testing produced 85 plans from 147 requests; static testing produced 102. Both
-had 0.000 m maximum odometry drift and exactly one shadow record per successful
-plan. The legacy gate selected candidates with lower minimum clearance in
-24/85 dynamic and 21/102 static plans, and increased unknown length in 14/85
-and 15/102 respectively. Worst selected minimum-clearance loss was 0.039 m
-dynamic and 0.017 m static; worst unknown-length increase was 0.062 m and
-0.033 m. All 34 goals available in every static round had zero metric spread,
-while the moving-person runs showed expected map-dependent variation.
+###### Stage 1 Progress Snapshot (2026-07-16)
 
-These results support a provisional Stage 2 replay with collision/out-of-map
-as absolute rejects, strict non-increase of unknown length for normal
-navigation, and a 0.025 m relative minimum-clearance-loss limit (half the
-0.05 m costmap cell). P5 clearance and `raw_mean_cost + 2.0` remain diagnostic.
-Replay this proposed policy against the saved batch records before enabling it
-in live selection, then add narrow-passage and real localization/tracking-error
-evidence. Full results are under
+Completed:
+
+- [x] record raw and every alpha candidate in shadow mode;
+- [x] record minimum/P5 clearance, unknown exposure, path length, cumulative
+  turn, mean cost, hard-failure reason, and selected alpha;
+- [x] preserve the existing selected path while collecting metrics;
+- [x] add the reusable fixed-odometry runner
+  `scripts/m20_candidate_validator_sweep.py`;
+- [x] run three 49-goal moving-person rounds and three clean-static rounds;
+- [x] save every case and its shadow metrics as versioned JSON.
+
+Still required before a live Stage 2 decision change:
+
+- [ ] replay the exact proposed 0.025 m policy against saved and live data;
+- [ ] add a purpose-built narrow-passage scenario;
+- [ ] include measured real localization and path-tracking error;
+- [ ] run the physical validator in shadow alongside the legacy gate before
+  making it authoritative.
+
+![Candidate validator batch comparison](validation/candidate-validator-shadow/2026-07-16/candidate-validator-batch-summary.png)
+
+The repeatable runner held the robot near `(-1.006, 1.000)` by publishing a
+zero teleop command before each goal. Each successful goal produced exactly one
+shadow record and both datasets had 0.000 m maximum odometry drift.
+
+| Batch result | Moving person | Clean static |
+|---|---:|---:|
+| Requests / successful plans | 147 / 85 | 147 / 102 |
+| Legacy alpha 1.0 / 0.5 selections | 81 / 4 | 99 / 3 |
+| Selected paths with lower minimum clearance | 24 | 21 |
+| Selected paths with increased unknown length | 14 | 15 |
+| Worst selected minimum-clearance loss | 0.039 m | 0.017 m |
+| Worst selected P5-clearance loss | 0.085 m | 0.092 m |
+| Worst selected unknown-length increase | 0.062 m | 0.033 m |
+| Median path-length change | -0.076 m | -0.079 m |
+| Median cumulative-turn change | -3.267 rad | -4.015 rad |
+
+All 34 goals available in every static round produced identical metric deltas,
+so the measurements are deterministic when robot pose and obstacle state are
+fixed. The moving-person runs showed expected map-dependent spread. The old
+`raw_mean_cost + 2.0` gate therefore demonstrably accepts some candidates that
+are collision-free but physically worse than raw A* in clearance or unknown
+exposure. It is not a sufficient final acceptance contract.
+
+###### Stage 1 Decision
+
+1. **Keep the current smoother.** It consistently shortens paths and reduces
+   cumulative turn; replacing it would mix geometry generation with safety
+   validation.
+2. **Keep collision validation authoritative.** Twenty-one lethal shadow
+   candidates were identified across the retained datasets and none became a
+   selected controller path.
+3. **Use minimum clearance as the hard clearance metric.** P5 is valuable for
+   diagnostics but is more sensitive to moving-map changes.
+4. **Require no increase in unknown length for normal navigation.** The clean
+   static repeats had zero spread, so deterministic increases up to 0.033 m are
+   not merely logging noise.
+5. **Treat 0.025 m as provisional, not active.** It is half of the 0.05 m
+   costmap cell and must pass the remaining narrow-passage and real-error gates.
+
+The chart's final panel is a stricter **0.020 m sensitivity replay**, not the
+proposed 0.025 m policy. Under that sensitivity, alpha 1.0 would remain selected
+for 67/85 moving-person and 87/102 static plans; 11 and 15 plans respectively
+would return raw A*. Full records and the detailed report are under
 `docs/development/validation/candidate-validator-shadow/2026-07-16/`.
 
 ##### Stage 2: Enforce A Physical Candidate Contract
