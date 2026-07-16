@@ -328,6 +328,13 @@ def main() -> None:
                 if not shadow_records:
                     time.sleep(0.02)
 
+            if args.hold_position:
+                transport.publish(TELEOP_TOPIC, Twist.zero().lcm_encode())
+                # Close the final-goal control gap and let cancellation settle
+                # before recording odometry or starting the next case.
+                time.sleep(0.2)
+                transport.handle_timeout(0)
+
             odom = latest_odom
             planned = raw_sequence > before_raw and path_sequence > before_path
             if not planned or latest_raw is None or latest_path is None or not shadow_records:
@@ -375,6 +382,9 @@ def main() -> None:
                 f"status={result['status']} shadow={result['shadow_records']}"
             )
             time.sleep(args.settle_s)
+
+    if args.hold_position:
+        transport.publish(TELEOP_TOPIC, Twist.zero().lcm_encode())
 
     report = {
         "created_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
