@@ -64,3 +64,21 @@ replanningastarplanner:
   # Publish the raw grid-cell A* route on /raw_path for Rerun comparison.
   # Keep disabled during normal operation; restart DimOS after changing it.
   publish_raw_path: false
+
+  # Use bounded local smoothing instead of the legacy unconstrained moving average.
+  constrained_path_smoothing_enabled: true
+
+  # Iterative reference/curvature optimizer settings.
+  path_smoothing_iterations: 40
+  path_smoothing_data_weight: 0.02
+  path_smoothing_smoothness_weight: 0.45
+
+  # Hard lateral tube around each raw A* point, in metres.
+  path_smoothing_max_deviation_m: 0.10
+
+  # Costmap validation interval and allowed mean-cost increase.
+  path_smoothing_collision_sample_spacing_m: 0.05
+  path_smoothing_max_cost_increase: 2.0
+
+  # Final controller-path spacing, in metres.
+  path_resample_spacing_m: 0.10

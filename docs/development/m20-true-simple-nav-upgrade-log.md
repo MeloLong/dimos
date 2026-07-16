@@ -1,9 +1,9 @@
 # M20 True Simple-Nav Upgrade Log
 
 - Status: Active engineering record
-- Baseline: `codex/wd-m20-mujoco-sim`, commit `9726f754`
+- Baseline: `wd/m20-mujoco-simulation`, commit `5ecbb8e1`
 - Scope: MuJoCo `m20-true-simple-nav-sim` planning path quality and stability
-- Updated: 2026-07-15
+- Updated: 2026-07-16
 
 ## Purpose
 
@@ -19,7 +19,8 @@ point cloud
   -> NavigationMap gradient / Voronoi costmap
   -> safe-goal selection
   -> weighted A* global path
-  -> smooth_resample_path (0.1 m)
+  -> constrained local smoothing (M20 MuJoCo profile; legacy fallback otherwise)
+  -> uniform resampling (0.1 m)
   -> LocalPlanner tracking controller
   -> nav_cmd_vel
 ```
@@ -29,6 +30,90 @@ regular gradient costmap nearer the goal. Low map cost generally means more
 clearance from obstacles, but it is not a direct measure of geometric path
 length.
 
+## Agreed Single-Plan Quality Program
+
+The current scope deliberately holds the costmap, start, and goal fixed. It
+first makes one generated route geometrically suitable for tracking; temporal
+consistency between later replans is a separate phase.
+
+### Step 1: Replace The Legacy Smoothing Layer (Current Priority)
+
+Keep weighted A* as the route/topology provider. Replace its unconstrained X/Y
+moving average with a local constrained smoother:
+
+```text
+raw A* grid path
+  -> reference/neighbor iterative smoothing
+  -> maximum metric displacement from each raw point
+  -> continuous lethal-cell and effective-cost checks
+  -> uniform resampling and orientations
+  -> LocalPlanner
+```
+
+The smoother must keep start/goal fixed, never connect arbitrary distant path
+points, and preserve the route corridor with a hard per-point displacement
+limit. Unknown cells retain the same effective penalty used by A* rather than
+silently becoming free or a new hard obstacle. A failed final validation falls
+back to the raw A* geometry with uniform resampling.
+
+The first configuration surface is:
+
+- `constrained_path_smoothing_enabled`
+- `path_smoothing_iterations`
+- `path_smoothing_data_weight`
+- `path_smoothing_smoothness_weight`
+- `path_smoothing_max_deviation_m`
+- `path_smoothing_collision_sample_spacing_m`
+- `path_smoothing_max_cost_increase`
+- `path_resample_spacing_m`
+
+Legacy smoothing remains the compatibility default for other
+`ReplanningAStarPlanner` users. The M20 MuJoCo profile explicitly enables the
+new mode so raw-versus-smoothed Rerun comparison remains available.
+
+### Step 2: Add Heading-Change Cost To A* (Only If Still Needed)
+
+After Step 1 is validated, inspect the orange raw A* path. If it still contains
+large alternating direction changes that cannot be smoothed inside the bounded
+corridor, extend the A* state from `(x, y)` to `(x, y, incoming_direction)` and
+add a small normalized turn cost.
+
+This is intentionally second because it changes search behavior, native/Python
+parity, and potentially CPU cost. It is unnecessary when the constrained
+smoother can absorb normal grid quantization without violating its deviation
+or safety limits.
+
+### Step 1 Implementation And Offline Validation
+
+The first implementation is opt-in at the shared planner level and enabled by
+`mujoco_sim.yaml`. It applies only local reference/neighbor corrections; every
+raw A* point remains inside a `0.10 m` displacement bound, start and goal stay
+fixed, and no distant path points are connected. Each candidate's adjacent
+segments are sampled against the same inflated costmap. Lethal or out-of-map
+moves are rejected, and an allowed move may increase effective local mean cost
+by at most `2.0` cost units. Unknown retains A*'s effective cost of `80`.
+
+The selected MuJoCo profile is 40 iterations, data weight `0.02`, smoothness
+weight `0.45`, `0.05 m` collision sampling, and `0.10 m` output spacing. The
+raw local reference costs are precomputed once before iteration.
+
+Two costmap/path snapshots captured from actual M20 MuJoCo runs were replayed
+offline. The snapshots stored the live costmap and old `/path`; validation
+re-ran weighted A* from the stored start/goal to obtain raw grid paths, then
+applied both smoothing implementations to the same input.
+
+| Snapshot | Raw A* turn | Legacy turn | Constrained turn | Legacy length | Constrained length | Max nearest raw-point distance | Runtime |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Planning | 3.93 rad | 1.95 rad | 1.48 rad | 3.52 m | 3.47 m | 0.081 m | 57 ms |
+| Detour | 13.35 rad | 3.44 rad | 2.49 rad | 7.54 m | 7.47 m | 0.077 m | 126 ms |
+
+Both constrained outputs passed continuous lethal-cell validation at `0.025 m`
+sampling. These results validate the static geometry and costmap contract, not
+closed-loop tracking. A restarted MuJoCo run must still confirm controller
+behavior, replans, and clearance over time.
+
+![Real M20 costmap replay comparison](assets/m20-constrained-smoothing-real-snapshots.webp)
+
 ## Evidence And Problems
 
 | ID | State | Problem | Evidence | Effect |
@@ -36,7 +121,7 @@ length.
 | P1 | Implemented | A* ranked map cost before distance. | A reproduced route was 0.354 m versus a 0.271 m direct corridor because it saved 8 raw cell-cost units. | Unnecessary winding and endpoint return hooks. |
 | P2 | Open / design decision | `initial_safe_radius_meters` is a fixed startup disc around global `(0, 0)`. | `CostMapper._apply_initial_safe_radius` computes distance from world zero, not robot odometry. | It does not clean sparse cells near the robot after movement. |
 | P3 | Implemented / runtime validation pending | Spatial-spread stuck detection caused false replans. | Active simulation logs showed forward commands with no obstacle, but 0.20-0.28 m coordinate spread was below the old 1.0 m simulation threshold. | The detector now requires insufficient cumulative path progress instead. |
-| P4 | Candidate | Grid path topology is passed directly to smoothing. | Smoothing made the existing raw A* terminal correction visually obvious; it did not create it. | Even a valid grid route can contain unnecessary bends. |
+| P4 | Implemented / runtime validation pending | Grid path topology contains local quantization bends. | Real costmap replay reduced cumulative turn by 24-28% versus legacy smoothing while retaining a bounded A* corridor. | Static geometry improved; closed-loop tracking still requires MuJoCo validation. |
 | P5 | Open | Sparse map quality is not separately measured before path planning. | One inspected costmap contained about 38,808 unknown, 39,114 free, and 870 occupied cells. | Planner behavior can vary with local perception coverage rather than only geometry. |
 | P6 | Open | Unknown-cell policy differs between planning and local clearance. | A* may cross unknown at a penalty of 80, while local obstacle checking stops only for lethal cost 100. | The robot can plan through unobserved terrain without an explicit risk policy. |
 
@@ -163,17 +248,24 @@ large geometric detour; works for both global and near-goal maps.
 **Trade-off:** excessive distance weighting can cut too close to obstacles.
 The map-cost term must remain nonzero and tests must include narrow corridors.
 
-### B. Visibility Shortcutting Or Theta-Star
+### B. Constrained Local Geometry Smoothing
 
-After A* finds a collision-free grid route, attempt to replace consecutive
-segments with a direct line only when every crossed cell respects occupancy and
-clearance constraints.
+After A* finds a route, iteratively reduce local second differences while
+keeping every point close to its corresponding raw A* point. Accept a move only
+when adjacent swept segments remain valid and their effective cost does not
+materially exceed the raw local subpath.
 
-**Benefits:** removes grid stair-stepping and residual bends even if the cost
-field is irregular.
+**Benefits:** removes local grid stair-stepping without replacing the global
+route or discarding the cost-field preference selected by A*.
 
-**Trade-off:** requires robust line traversal and clearance validation. It is a
-second-stage improvement, not a substitute for correcting the objective.
+**Trade-off:** the displacement bound limits how much curvature can be removed.
+If raw A* direction changes exceed that envelope, Step 2 turn-aware A* becomes
+necessary.
+
+An earlier unconstrained visibility-shortcut prototype was rejected because a
+collision-free straight segment could still cut through a high-cost or sparse
+corridor and erase A* route structure. Do not reintroduce farthest-visible
+point connection as the smoothing policy.
 
 ### C. Split Startup Clearing From A Deliberate Dynamic Local-Map Policy
 
@@ -313,8 +405,9 @@ cost-first behavior unless they explicitly opt in. The true simple-nav
    recording the scenario and result.
 5. Restart and validate the P3 path-progress monitor before tuning any more
    A* weights. Then investigate P2/P5/P6 separately.
-6. Consider visibility shortcutting only after the weighted objective and map
-   quality have been evaluated.
+6. Inspect raw A* after constrained smoothing is validated. Add direction-state
+   turn cost only if material alternating turns remain outside the smoothing
+   envelope; do not reintroduce visibility shortcutting.
 
 ## Acceptance Criteria For This Phase
 

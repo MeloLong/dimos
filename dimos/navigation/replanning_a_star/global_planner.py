@@ -23,7 +23,11 @@ from reactivex.disposable import CompositeDisposable
 from dimos.constants import DEFAULT_THREAD_JOIN_TIMEOUT
 from dimos.core.global_config import GlobalConfig
 from dimos.core.resource import Resource
-from dimos.mapping.occupancy.path_resampling import smooth_resample_path
+from dimos.mapping.occupancy.path_resampling import (
+    ConstrainedPathSmoothingConfig,
+    constrained_smooth_resample_path,
+    smooth_resample_path,
+)
 from dimos.msgs.geometry_msgs.PoseStamped import PoseStamped
 from dimos.msgs.geometry_msgs.Twist import Twist
 from dimos.msgs.geometry_msgs.Vector3 import Vector3
@@ -84,6 +88,8 @@ class GlobalPlanner(Resource):
     _path_length_weight: float
     _path_cell_cost_weight: float
     _publish_raw_path: bool
+    _constrained_path_smoothing_enabled: bool
+    _path_smoothing_config: ConstrainedPathSmoothingConfig
 
     _safe_goal_tolerance: float = 4.0
     _goal_tolerance: float = 0.2
@@ -102,6 +108,14 @@ class GlobalPlanner(Resource):
         path_length_weight: float = 1.0,
         path_cell_cost_weight: float = 3.0,
         publish_raw_path: bool = False,
+        constrained_path_smoothing_enabled: bool = False,
+        path_smoothing_iterations: int = 40,
+        path_smoothing_data_weight: float = 0.02,
+        path_smoothing_smoothness_weight: float = 0.45,
+        path_smoothing_max_deviation_m: float = 0.1,
+        path_smoothing_collision_sample_spacing_m: float = 0.05,
+        path_smoothing_max_cost_increase: float = 2.0,
+        path_resample_spacing_m: float = 0.1,
     ) -> None:
         self.path = Subject()
         self.raw_path = Subject()
@@ -111,6 +125,16 @@ class GlobalPlanner(Resource):
         self._path_length_weight = path_length_weight
         self._path_cell_cost_weight = path_cell_cost_weight
         self._publish_raw_path = publish_raw_path
+        self._constrained_path_smoothing_enabled = constrained_path_smoothing_enabled
+        self._path_smoothing_config = ConstrainedPathSmoothingConfig(
+            spacing_m=path_resample_spacing_m,
+            max_iterations=path_smoothing_iterations,
+            data_weight=path_smoothing_data_weight,
+            smoothness_weight=path_smoothing_smoothness_weight,
+            max_deviation_m=path_smoothing_max_deviation_m,
+            collision_sample_spacing_m=path_smoothing_collision_sample_spacing_m,
+            max_cost_increase=path_smoothing_max_cost_increase,
+        )
         self._navigation_map = NavigationMap(self._global_config, "voronoi")
         self._navigation_map_near = NavigationMap(self._global_config, "gradient")
         self._local_planner = LocalPlanner(
@@ -391,26 +415,41 @@ class GlobalPlanner(Resource):
             self.cancel_goal()
             return
 
-        path = self._find_wide_path(safe_goal, current_odom.position)
+        found_path = self._find_wide_path(safe_goal, current_odom.position)
 
-        if not path:
+        if not found_path:
             logger.warning(
                 "No path found to the goal.", x=round(safe_goal.x, 3), y=round(safe_goal.y, 3)
             )
             self.cancel_goal()
             return
 
+        path, costmap = found_path
         # Keep the grid path visible for diagnostics; only the resampled path
         # is consumed by LocalPlanner and sent to the movement stack.
         if self._publish_raw_path:
             self.raw_path.on_next(path)
-        resampled_path = smooth_resample_path(path, current_goal, 0.1)
+        if self._constrained_path_smoothing_enabled:
+            resampled_path = constrained_smooth_resample_path(
+                path,
+                current_goal,
+                costmap,
+                self._path_smoothing_config,
+            )
+        else:
+            resampled_path = smooth_resample_path(
+                path,
+                current_goal,
+                self._path_smoothing_config.spacing_m,
+            )
 
         self.path.on_next(resampled_path)
 
         self._local_planner.start_planning(resampled_path)
 
-    def _find_wide_path(self, goal: Vector3, robot_pos: Vector3) -> Path | None:
+    def _find_wide_path(
+        self, goal: Vector3, robot_pos: Vector3
+    ) -> tuple[Path, OccupancyGrid] | None:
         #        sizes_to_try: list[float] = [2.2, 1.7, 1.3, 1]
         sizes_to_try: list[float] = [1.1]
 
@@ -427,7 +466,7 @@ class GlobalPlanner(Resource):
             )
             if path and path.poses:
                 logger.info(f"Found path {size}x robot width.")
-                return path
+                return path, costmap
 
         return None
 

@@ -59,8 +59,21 @@ def test_true_simple_nav_sim_loads_raw_path_debug_switch() -> None:
         atom for atom in m20_true_simple_nav_sim.blueprints if atom.module is ReplanningAStarPlanner
     )
 
-    assert payload["replanningastarplanner"]["publish_raw_path"] is False
-    assert planner.kwargs["publish_raw_path"] is False
+    assert (
+        planner.kwargs["publish_raw_path"] == payload["replanningastarplanner"]["publish_raw_path"]
+    )
+
+
+def test_true_simple_nav_sim_loads_constrained_smoothing_profile() -> None:
+    payload = yaml.safe_load(M20_MUJOCO_SIM_CONFIG_PATH.read_text(encoding="utf-8"))
+    values = payload["replanningastarplanner"]
+    planner = next(
+        atom for atom in m20_true_simple_nav_sim.blueprints if atom.module is ReplanningAStarPlanner
+    )
+
+    assert values["constrained_path_smoothing_enabled"] is True
+    for name, value in values.items():
+        assert planner.kwargs[name] == value
 
 
 def test_true_simple_nav_sim_loads_checked_in_sensor_profile() -> None:
