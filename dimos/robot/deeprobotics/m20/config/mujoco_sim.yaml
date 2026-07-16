@@ -94,10 +94,19 @@ replanningastarplanner:
   # Keep this no larger than the 0.05 m costmap resolution; use 0.025 for stricter tests.
   path_smoothing_collision_sample_spacing_m: 0.05
 
-  # Maximum permitted increase in mean costmap cost versus the raw local path,
-  # value >= 0. A value of 0 forbids any cost increase; larger values allow more
-  # rounding near inflated gradients. Lethal and out-of-map cells are always rejected.
+  # Maximum permitted increase in mean costmap cost, value >= 0. Local point
+  # updates compare against the matching raw neighborhood; final fractional
+  # candidates compare against uniformly resampled raw A*. A value of 0 forbids
+  # any increase. Lethal and out-of-map cells are always rejected.
   path_smoothing_max_cost_increase: 2.0
+
+  # Fraction retained after each failed full-path validation, range (0.0, 1.0).
+  # With 0.5, candidates retain 100%, 50%, 25%, then 12.5% of smoothing.
+  path_smoothing_backtracking_factor: 0.5
+
+  # Number of reduced-fraction retries after the full candidate, integer >= 0.
+  # Three retries with factor 0.5 evaluate 1.0, 0.5, 0.25, and 0.125.
+  path_smoothing_max_backtracking_steps: 3
 
   # Approximate spacing between final controller waypoints, in metres, > 0.
   # Smaller values preserve curves but increase message/controller work; larger

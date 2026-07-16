@@ -144,7 +144,9 @@ behavior, replans, and clearance over time.
 | `path_smoothing_smoothness_weight` | `0.45` | Neighbor smoothness strength, range `0..0.5`. Higher removes local bends more strongly; `0` disables this correction. |
 | `path_smoothing_max_deviation_m` | `0.10 m` | Hard displacement limit from each matching raw A* point. Larger values allow more rounding but weaken route fidelity; `0` disables geometric adjustment. |
 | `path_smoothing_collision_sample_spacing_m` | `0.05 m` | Costmap sample interval along candidate segments. Smaller is stricter but costs more CPU; it should not exceed map resolution. |
-| `path_smoothing_max_cost_increase` | `2.0` | Maximum allowed mean cost increase over the raw local/whole path. `0` permits no increase; lethal and out-of-map cells are rejected regardless. |
+| `path_smoothing_max_cost_increase` | `2.0` | Maximum allowed mean cost increase over each raw local neighborhood and the uniformly resampled raw whole-path baseline. `0` permits no increase; lethal and out-of-map cells are rejected regardless. |
+| `path_smoothing_backtracking_factor` | `0.5` | Fraction of the previous smoothing displacement retained after each failed whole-path validation, range `0..1` exclusive. `0.5` tests half as much adjustment on every retry. |
+| `path_smoothing_max_backtracking_steps` | `3` | Number of reduced-fraction retries after the full candidate. With factor `0.5`, three retries evaluate `1.0`, `0.5`, `0.25`, and `0.125`. `0` restores one-shot validation. |
 | `path_resample_spacing_m` | `0.10 m` | Final controller waypoint spacing. Smaller better represents curves with more processing; larger reduces point count but can lose tight geometry. |
 
 `publish_raw_path` is a related diagnostic switch rather than a smoothing
@@ -187,9 +189,9 @@ topology/objective issues outside the 0.10 m local smoothing tube.
 
 ![M20 simple-nav goal sweep](assets/m20-smoothing-goal-sweep-2.webp)
 
-#### Proposed Constrained Backtracking
+#### Implemented Constrained Backtracking
 
-The first proposed backtracking implementation is **global fractional
+The first backtracking implementation is **global fractional
 backtracking**, not local segment replacement. For every raw A* control point
 `R[i]` and fully smoothed point `S[i]`, evaluate:
 
@@ -199,14 +201,52 @@ B[i, alpha] = R[i] + alpha * (S[i] - R[i])
 alpha = 1.0   full smoothing
 alpha = 0.5   half of every smoothing displacement
 alpha = 0.25  quarter of every smoothing displacement
-alpha = 0.0   raw A* geometry
+alpha = 0.125 one eighth of every smoothing displacement
+fallback      uniformly resampled raw A* geometry
 ```
 
 Try decreasing `alpha` values and publish the largest fraction whose resampled
-path passes the unchanged lethal/out-of-map and `raw_cost + 2.0` checks. Start
-and goal remain fixed, route topology is unchanged, and every reduction in
-`alpha` also reduces point displacement from raw A*. Only when no nonzero
-fraction passes does the planner use the existing full raw fallback.
+path passes the unchanged lethal/out-of-map and `raw_cost + 2.0` checks. The
+whole-path cost baseline is now the uniformly resampled raw path, so baseline
+and candidates use the same waypoint and validation sampling representation.
+Start and goal remain fixed, route topology is unchanged, and every reduction
+in `alpha` also reduces point displacement from raw A*. Only when all four
+nonzero fractions fail does the planner publish the raw-resampled fallback.
+
+The implementation emits one structured record for every rejected fraction
+and records `selected_fraction`, baseline/candidate/allowed cost, rejected
+fractions, point counts, and actual displacement on acceptance. This makes a
+true fallback distinguishable from a straight path that happens to equal raw
+resampling.
+
+##### Live Validation Result
+
+The same two 69-goal sweeps were repeated from simulation odometry
+`(-1.006, 1.000)` after enabling fractional backtracking. The costmap was
+rebuilt by the new process, so structured planner decisions rather than the
+sweep script's geometric equality label are authoritative.
+
+| Decision | Count | Share of 49 smoothing decisions |
+| --- | ---: | ---: |
+| Full smoothing, `alpha=1.0` | 29 | 59.2% |
+| Half smoothing, `alpha=0.5` | 14 | 28.6% |
+| Quarter smoothing, `alpha=0.25` | 1 | 2.0% |
+| Eighth smoothing, `alpha=0.125` | 0 | 0.0% |
+| Raw-resampled fallback | 5 | 10.2% |
+
+The immediately preceding run from the same initial odometry produced 37
+fallback warnings among 48 successful smoothing decisions, approximately
+77.1%. Fractional selection therefore recovered a nonzero smoothed result in
+most cases that previously discarded the complete candidate. All 36 rejected
+fraction records still reported `cost_increase`; none reported `lethal_cell`
+or `out_of_bounds`. Fixed planning-turn and obstacle-detour snapshots selected
+`alpha=1.0` and retained their previous geometry and metrics.
+
+This validates the candidate-search structure, but it does not validate the
+physical meaning of the fixed `+2.0` mean-cost threshold. That threshold stays
+unchanged in this stage for attribution. The next validator iteration should
+measure physical clearance and unknown-space exposure while preserving this
+fraction schedule.
 
 This is deliberately conservative: all path corrections are reduced together,
 even if only one area raised the final mean cost. A future local-only repair

@@ -1,12 +1,15 @@
 from itertools import pairwise
 import math
+from unittest.mock import patch
 
 import numpy as np
 
 from dimos.mapping.occupancy.path_resampling import (
     ConstrainedPathSmoothingConfig,
     _path_cost_validation,
+    _select_backtracked_path,
     constrained_smooth_resample_path,
+    simple_resample_path,
 )
 from dimos.msgs.geometry_msgs.Pose import Pose
 from dimos.msgs.geometry_msgs.PoseStamped import PoseStamped
@@ -100,3 +103,52 @@ def test_path_cost_validation_reports_rejection_reason() -> None:
     assert lethal_reason == "lethal_cell"
     assert outside_cost is None
     assert outside_reason == "out_of_bounds"
+
+
+def test_backtracking_selects_largest_valid_fraction() -> None:
+    raw = _path([(0.2, 0.2), (0.3, 0.3), (0.4, 0.2)])
+    original = np.array([[pose.x, pose.y] for pose in raw.poses])
+    smoothed = original.copy()
+    smoothed[1, 1] = 0.2
+    goal = Pose(position=raw.poses[-1].position)
+    config = ConstrainedPathSmoothingConfig(
+        spacing_m=0.05,
+        backtracking_factor=0.5,
+        max_backtracking_steps=3,
+    )
+
+    with patch(
+        "dimos.mapping.occupancy.path_resampling._path_cost_validation",
+        side_effect=[(10.0, None), (13.0, None), (11.0, None)],
+    ):
+        result = _select_backtracked_path(raw, original, smoothed, goal, _costmap(), config)
+
+    expected_points = original + 0.5 * (smoothed - original)
+    expected = simple_resample_path(_path(expected_points.tolist()), goal, config.spacing_m)
+    assert np.allclose(
+        [[pose.x, pose.y] for pose in result.poses],
+        [[pose.x, pose.y] for pose in expected.poses],
+    )
+
+
+def test_backtracking_uses_aligned_raw_baseline_after_all_fractions_fail() -> None:
+    raw = _path([(0.2, 0.2), (0.3, 0.3), (0.4, 0.2)])
+    original = np.array([[pose.x, pose.y] for pose in raw.poses])
+    smoothed = original.copy()
+    smoothed[1, 1] = 0.2
+    goal = Pose(position=raw.poses[-1].position)
+    config = ConstrainedPathSmoothingConfig(spacing_m=0.05, max_backtracking_steps=2)
+
+    with patch(
+        "dimos.mapping.occupancy.path_resampling._path_cost_validation",
+        side_effect=[(10.0, None), (13.0, None), (12.5, None), (12.1, None)],
+    ) as validate:
+        result = _select_backtracked_path(raw, original, smoothed, goal, _costmap(), config)
+
+    expected = simple_resample_path(raw, goal, config.spacing_m)
+    assert np.allclose(
+        [[pose.x, pose.y] for pose in result.poses],
+        [[pose.x, pose.y] for pose in expected.poses],
+    )
+    baseline_points = validate.call_args_list[0].args[0]
+    assert np.allclose(baseline_points, [[pose.x, pose.y] for pose in expected.poses])

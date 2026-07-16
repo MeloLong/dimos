@@ -48,6 +48,8 @@ class ReplanningAStarPlannerConfig(ModuleConfig):
     path_smoothing_max_deviation_m: float = Field(default=0.1, ge=0.0)
     path_smoothing_collision_sample_spacing_m: float = Field(default=0.05, gt=0.0)
     path_smoothing_max_cost_increase: float = Field(default=2.0, ge=0.0)
+    path_smoothing_backtracking_factor: float = Field(default=0.5, gt=0.0, lt=1.0)
+    path_smoothing_max_backtracking_steps: int = Field(default=3, ge=0)
     path_resample_spacing_m: float = Field(default=0.1, gt=0.0)
 
 
@@ -98,6 +100,10 @@ class ReplanningAStarPlanner(Module, NavigationInterface):
                 self.config.path_smoothing_collision_sample_spacing_m
             ),
             path_smoothing_max_cost_increase=self.config.path_smoothing_max_cost_increase,
+            path_smoothing_backtracking_factor=self.config.path_smoothing_backtracking_factor,
+            path_smoothing_max_backtracking_steps=(
+                self.config.path_smoothing_max_backtracking_steps
+            ),
             path_resample_spacing_m=self.config.path_resample_spacing_m,
         )
 
