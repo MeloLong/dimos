@@ -83,6 +83,7 @@ class GlobalPlanner(Resource):
     _safe_goal_clearance: float
     _path_length_weight: float
     _path_cell_cost_weight: float
+    _publish_raw_path: bool
 
     _safe_goal_tolerance: float = 4.0
     _goal_tolerance: float = 0.2
@@ -100,6 +101,7 @@ class GlobalPlanner(Resource):
         *,
         path_length_weight: float = 1.0,
         path_cell_cost_weight: float = 3.0,
+        publish_raw_path: bool = False,
     ) -> None:
         self.path = Subject()
         self.raw_path = Subject()
@@ -108,6 +110,7 @@ class GlobalPlanner(Resource):
         self._global_config = global_config
         self._path_length_weight = path_length_weight
         self._path_cell_cost_weight = path_cell_cost_weight
+        self._publish_raw_path = publish_raw_path
         self._navigation_map = NavigationMap(self._global_config, "voronoi")
         self._navigation_map_near = NavigationMap(self._global_config, "gradient")
         self._local_planner = LocalPlanner(
@@ -185,7 +188,8 @@ class GlobalPlanner(Resource):
                 self._replan_limiter.reset()
 
         self.path.on_next(Path())
-        self.raw_path.on_next(Path())
+        if self._publish_raw_path:
+            self.raw_path.on_next(Path())
         self._local_planner.stop_planning()
 
         if not but_will_try_again:
@@ -398,7 +402,8 @@ class GlobalPlanner(Resource):
 
         # Keep the grid path visible for diagnostics; only the resampled path
         # is consumed by LocalPlanner and sent to the movement stack.
-        self.raw_path.on_next(path)
+        if self._publish_raw_path:
+            self.raw_path.on_next(path)
         resampled_path = smooth_resample_path(path, current_goal, 0.1)
 
         self.path.on_next(resampled_path)

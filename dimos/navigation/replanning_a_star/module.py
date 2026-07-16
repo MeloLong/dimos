@@ -40,6 +40,7 @@ class ReplanningAStarPlannerConfig(ModuleConfig):
     robot_rotation_diameter: float | None = None
     path_length_weight: float = Field(default=1.0, ge=0.0)
     path_cell_cost_weight: float = Field(default=3.0, ge=0.0)
+    publish_raw_path: bool = False
 
 
 class ReplanningAStarPlanner(Module, NavigationInterface):
@@ -79,6 +80,7 @@ class ReplanningAStarPlanner(Module, NavigationInterface):
             effective_global_config,
             path_length_weight=self.config.path_length_weight,
             path_cell_cost_weight=self.config.path_cell_cost_weight,
+            publish_raw_path=self.config.publish_raw_path,
         )
 
     @rpc
