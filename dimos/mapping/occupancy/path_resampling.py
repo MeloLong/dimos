@@ -41,6 +41,8 @@ class ConstrainedPathSmoothingConfig:
     max_deviation_m: float = 0.1
     collision_sample_spacing_m: float = 0.05
     max_cost_increase: float = 2.0
+    backtracking_factor: float = 0.5
+    max_backtracking_steps: int = 3
 
     def __post_init__(self) -> None:
         if self.spacing_m <= 0 or self.collision_sample_spacing_m <= 0:
@@ -53,6 +55,10 @@ class ConstrainedPathSmoothingConfig:
             raise ValueError("smoothness_weight must be between 0 and 0.5")
         if self.max_cost_increase < 0:
             raise ValueError("max_cost_increase must be non-negative")
+        if not 0 < self.backtracking_factor < 1:
+            raise ValueError("backtracking_factor must be between 0 and 1")
+        if self.max_backtracking_steps < 0:
+            raise ValueError("max_backtracking_steps must be non-negative")
 
 
 def _add_orientations_to_path(path: Path, goal_orientation: Quaternion) -> None:
@@ -220,6 +226,107 @@ def _path_from_xy(path: Path, points: np.ndarray) -> Path:
     )
 
 
+def _resample_xy(
+    source_path: Path,
+    points: np.ndarray,
+    goal_pose: Pose,
+    spacing_m: float,
+) -> Path:
+    return simple_resample_path(
+        _path_from_xy(source_path, points),
+        goal_pose,
+        spacing_m,
+    )
+
+
+def _select_backtracked_path(
+    source_path: Path,
+    original: np.ndarray,
+    smoothed: np.ndarray,
+    goal_pose: Pose,
+    costmap: OccupancyGrid,
+    config: ConstrainedPathSmoothingConfig,
+) -> Path:
+    raw_resampled = _resample_xy(source_path, original, goal_pose, config.spacing_m)
+    raw_resampled_points = np.array(
+        [[pose.x, pose.y] for pose in raw_resampled.poses],
+        dtype=np.float64,
+    )
+    baseline_cost, baseline_failure_reason = _path_cost_validation(
+        raw_resampled_points,
+        costmap,
+        config.collision_sample_spacing_m,
+    )
+    if baseline_cost is None:
+        logger.warning(
+            "Raw-resampled baseline failed path validation; using raw-resampled A* path.",
+            reason=baseline_failure_reason,
+            raw_points=len(original),
+            baseline_points=len(raw_resampled_points),
+        )
+        return raw_resampled
+
+    max_allowed_cost = baseline_cost + config.max_cost_increase
+    full_offset = smoothed - original
+    fractions = [
+        config.backtracking_factor**step for step in range(config.max_backtracking_steps + 1)
+    ]
+    rejected_fractions: list[float] = []
+
+    for fraction in fractions:
+        blended = original + fraction * full_offset
+        candidate_path = _resample_xy(source_path, blended, goal_pose, config.spacing_m)
+        candidate_points = np.array(
+            [[pose.x, pose.y] for pose in candidate_path.poses],
+            dtype=np.float64,
+        )
+        candidate_cost, failure_reason = _path_cost_validation(
+            candidate_points,
+            costmap,
+            config.collision_sample_spacing_m,
+        )
+        rejection_reason = failure_reason
+        if candidate_cost is not None and candidate_cost > max_allowed_cost:
+            rejection_reason = "cost_increase"
+
+        if rejection_reason is None:
+            assert candidate_cost is not None
+            logger.info(
+                "Constrained path smoothing accepted.",
+                selected_fraction=round(fraction, 4),
+                baseline_cost=round(baseline_cost, 3),
+                candidate_cost=round(candidate_cost, 3),
+                max_allowed_cost=round(max_allowed_cost, 3),
+                rejected_fractions=rejected_fractions,
+                raw_points=len(original),
+                candidate_points=len(candidate_points),
+                max_deviation_m=round(
+                    float(np.max(np.linalg.norm(blended - original, axis=1))),
+                    3,
+                ),
+            )
+            return candidate_path
+
+        rejected_fractions.append(round(fraction, 4))
+        logger.info(
+            "Constrained path smoothing fraction rejected.",
+            fraction=round(fraction, 4),
+            reason=rejection_reason,
+            baseline_cost=round(baseline_cost, 3),
+            candidate_cost=None if candidate_cost is None else round(candidate_cost, 3),
+            max_allowed_cost=round(max_allowed_cost, 3),
+        )
+
+    logger.warning(
+        "All constrained smoothing fractions failed; using raw-resampled A* path.",
+        rejected_fractions=rejected_fractions,
+        baseline_cost=round(baseline_cost, 3),
+        max_allowed_cost=round(max_allowed_cost, 3),
+        raw_points=len(original),
+    )
+    return raw_resampled
+
+
 def constrained_smooth_resample_path(
     path: Path,
     goal_pose: Pose,
@@ -294,36 +401,14 @@ def constrained_smooth_resample_path(
         if max_change < 1e-4:
             break
 
-    candidate_path = simple_resample_path(
-        _path_from_xy(path, smoothed),
+    return _select_backtracked_path(
+        path,
+        original,
+        smoothed,
         goal_pose,
-        config.spacing_m,
-    )
-    candidate_points = np.array(
-        [[pose.x, pose.y] for pose in candidate_path.poses], dtype=np.float64
-    )
-    candidate_cost, candidate_failure_reason = _path_cost_validation(
-        candidate_points,
         costmap,
-        config.collision_sample_spacing_m,
+        config,
     )
-    if candidate_cost is None or candidate_cost > raw_cost + config.max_cost_increase:
-        logger.warning(
-            "Constrained path smoothing failed final validation; using raw A* path.",
-            reason=candidate_failure_reason or "cost_increase",
-            raw_cost=round(raw_cost, 3),
-            candidate_cost=None if candidate_cost is None else round(candidate_cost, 3),
-            max_allowed_cost=round(raw_cost + config.max_cost_increase, 3),
-            raw_points=len(original),
-            candidate_points=len(candidate_points),
-            max_deviation_m=round(
-                float(np.max(np.linalg.norm(smoothed - original, axis=1))),
-                3,
-            ),
-        )
-        return raw_resampled
-
-    return candidate_path
 
 
 def smooth_resample_path(
