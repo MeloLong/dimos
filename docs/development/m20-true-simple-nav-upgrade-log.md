@@ -248,6 +248,27 @@ unchanged in this stage for attribution. The next validator iteration should
 measure physical clearance and unknown-space exposure while preserving this
 fraction schedule.
 
+##### Representative Real-Path Comparison
+
+The following nine panels use paths captured directly from MuJoCo `/raw_path`
+and the final controller `/path`. They cover three full-smoothing cases, two
+half-smoothing cases, one quarter-smoothing case, one eighth-smoothing case,
+and two complete raw-resampled fallbacks.
+
+![M20 fractional backtracking representative paths](assets/m20-fractional-backtracking-typical-paths.webp)
+
+The primary 69-goal run did not select `alpha=0.125`, so an additional
+fine-grid sweep sampled 121 goals around the only primary `alpha=0.25` region.
+It produced 63 selections at `1.0`, 52 at `0.5`, one at `0.25`, and five at
+`0.125`, with no complete fallback. This supplemental run is used only to
+provide genuine eighth-fraction geometry; it does not alter the primary
+49-decision fallback statistic above.
+
+The `alpha=0.125` example is intentionally close to raw A*: only one eighth of
+the full optimizer displacement survives. Complete fallback examples may
+still show a lower reported cumulative turn because uniform 0.10 m resampling
+removes duplicate grid-cell headings, but their macro A* route is unchanged.
+
 This is deliberately conservative: all path corrections are reduced together,
 even if only one area raised the final mean cost. A future local-only repair
 could identify violating intervals and reduce smoothing only there, but the
