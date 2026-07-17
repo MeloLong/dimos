@@ -7,6 +7,8 @@ import pytest
 
 from dimos.mapping.occupancy.path_resampling import (
     ConstrainedPathSmoothingConfig,
+    _effective_path_cost,
+    _local_triple_path_cost,
     _path_cost_validation,
     _path_from_xy,
     _resample_xy,
@@ -306,6 +308,40 @@ def test_direct_path_cost_matches_legacy_on_seeded_grids_and_paths() -> None:
                     assert actual[0] is None
                 else:
                     assert actual[0] == pytest.approx(expected[0], abs=1e-12)
+
+
+def test_local_triple_cost_matches_general_validation() -> None:
+    rng = np.random.default_rng(20260717)
+    grid = rng.integers(-1, 100, size=(50, 60), dtype=np.int8)
+    grid[rng.random(grid.shape) < 0.05] = CostValues.OCCUPIED
+    costmap = OccupancyGrid(
+        grid=grid,
+        resolution=0.1,
+        origin=Pose(position=[-2.5, 1.7, 0.0]),
+    )
+    context = (
+        costmap.grid,
+        costmap.origin.position.x,
+        costmap.origin.position.y,
+        costmap.resolution,
+        costmap.width,
+        costmap.height,
+    )
+    for _ in range(250):
+        points = rng.uniform((-2.7, 1.5), (3.7, 6.9), size=(3, 2))
+        expected = _effective_path_cost(points, costmap, 0.05)
+        actual = _local_triple_path_cost(
+            points[0],
+            float(points[1, 0]),
+            float(points[1, 1]),
+            points[2],
+            context,
+            0.05,
+        )
+        if expected is None:
+            assert actual is None
+        else:
+            assert actual == pytest.approx(expected, abs=1e-12)
 
 
 def test_backtracking_selects_largest_valid_fraction() -> None:

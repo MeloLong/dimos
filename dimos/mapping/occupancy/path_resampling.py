@@ -543,6 +543,49 @@ def _effective_path_cost(
     return _path_cost_validation(points, costmap, sample_spacing_m)[0]
 
 
+def _local_triple_path_cost(
+    previous: np.ndarray,
+    candidate_x: float,
+    candidate_y: float,
+    following: np.ndarray,
+    grid_context: tuple[np.ndarray, float, float, float, int, int],
+    sample_spacing_m: float,
+) -> float | None:
+    grid, origin_x, origin_y, resolution, width, height = grid_context
+    total_cost = 0.0
+    value_count = 0
+    for segment_index in range(2):
+        if segment_index == 0:
+            start_x = float(previous[0])
+            start_y = float(previous[1])
+            end_x = candidate_x
+            end_y = candidate_y
+        else:
+            start_x = candidate_x
+            start_y = candidate_y
+            end_x = float(following[0])
+            end_y = float(following[1])
+        delta_x = end_x - start_x
+        delta_y = end_y - start_y
+        length = (delta_x**2 + delta_y**2) ** 0.5
+        sample_count = max(1, math.ceil(length / sample_spacing_m))
+        first_sample = 0 if segment_index == 0 else 1
+        for sample_index in range(first_sample, sample_count + 1):
+            ratio = sample_index / sample_count
+            point_x = start_x + ratio * delta_x
+            point_y = start_y + ratio * delta_y
+            grid_x = math.floor((point_x - origin_x) / resolution)
+            grid_y = math.floor((point_y - origin_y) / resolution)
+            if not (0 <= grid_x < width and 0 <= grid_y < height):
+                return None
+            value = int(grid[grid_y, grid_x])
+            if value >= CostValues.OCCUPIED:
+                return None
+            total_cost += 80.0 if value == CostValues.UNKNOWN else max(0.0, float(value))
+            value_count += 1
+    return total_cost / value_count if value_count else 0.0
+
+
 def _path_from_xy(path: Path, points: np.ndarray) -> Path:
     return Path(
         frame_id=path.frame_id,
@@ -946,28 +989,50 @@ def constrained_smooth_resample_path(
             for index in range(1, len(original) - 1)
         ]
         _record_elapsed(timing, "reference_costs_ms", reference_costs_started)
+        grid_context = (
+            costmap.grid,
+            costmap.origin.position.x,
+            costmap.origin.position.y,
+            costmap.resolution,
+            costmap.width,
+            costmap.height,
+        )
         smoothing_started = perf_counter()
         for iteration in range(config.max_iterations):
             if timing is not None:
                 timing["smoothing_iterations"] = iteration + 1
             max_change = 0.0
             for index in range(1, len(smoothed) - 1):
-                current = smoothed[index]
-                candidate = current + config.data_weight * (original[index] - current)
-                candidate += config.smoothness_weight * (
-                    smoothed[index - 1] + smoothed[index + 1] - 2 * current
+                current_x = float(smoothed[index, 0])
+                current_y = float(smoothed[index, 1])
+                candidate_x = current_x + config.data_weight * (
+                    float(original[index, 0]) - current_x
+                )
+                candidate_y = current_y + config.data_weight * (
+                    float(original[index, 1]) - current_y
+                )
+                candidate_x += config.smoothness_weight * (
+                    float(smoothed[index - 1, 0]) + float(smoothed[index + 1, 0]) - 2 * current_x
+                )
+                candidate_y += config.smoothness_weight * (
+                    float(smoothed[index - 1, 1]) + float(smoothed[index + 1, 1]) - 2 * current_y
                 )
 
-                offset = candidate - original[index]
-                offset_length = float(np.linalg.norm(offset))
+                offset_x = candidate_x - float(original[index, 0])
+                offset_y = candidate_y - float(original[index, 1])
+                offset_length = (offset_x**2 + offset_y**2) ** 0.5
                 if offset_length > config.max_deviation_m:
-                    candidate = original[index] + offset * (config.max_deviation_m / offset_length)
+                    scale = config.max_deviation_m / offset_length
+                    candidate_x = float(original[index, 0]) + offset_x * scale
+                    candidate_y = float(original[index, 1]) + offset_y * scale
 
-                candidate_points = np.vstack((smoothed[index - 1], candidate, smoothed[index + 1]))
                 reference_cost = reference_costs[index - 1]
-                candidate_cost = _effective_path_cost(
-                    candidate_points,
-                    costmap,
+                candidate_cost = _local_triple_path_cost(
+                    smoothed[index - 1],
+                    candidate_x,
+                    candidate_y,
+                    smoothed[index + 1],
+                    grid_context,
                     config.collision_sample_spacing_m,
                 )
                 if (
@@ -977,8 +1042,9 @@ def constrained_smooth_resample_path(
                 ):
                     continue
 
-                change = float(np.linalg.norm(candidate - current))
-                smoothed[index] = candidate
+                change = ((candidate_x - current_x) ** 2 + (candidate_y - current_y) ** 2) ** 0.5
+                smoothed[index, 0] = candidate_x
+                smoothed[index, 1] = candidate_y
                 max_change = max(max_change, change)
 
             if max_change < 1e-4:

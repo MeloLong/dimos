@@ -494,6 +494,41 @@ Python.
 Do not introduce a native implementation until Python behavior is fully
 captured by equivalence tests.
 
+### 9.3 Phase 3 Result (2026-07-17)
+
+**Status: passed; native extension not required.** The sequential Gauss-Seidel
+smoothing order and iteration limit remain unchanged. The Python loop now uses
+the same scalar operation order and a dedicated allocation-free local-triple
+cost check instead of creating candidate arrays and `np.vstack` objects for
+every interior point.
+
+Shadow-enabled formal matrix:
+
+| Length | P50 | P95 | P50 reduction vs Phase 0 | Gate |
+|---:|---:|---:|---:|---|
+| 2 m | 10.9 ms | 13.0 ms | 76.7% | pass |
+| 5 m | 19.5 ms | 21.3 ms | 82.2% | pass |
+| 10 m | 35.4 ms | 36.4 ms | 84.9% | pass |
+| 20 m | 66.8 ms | 68.4 ms | 86.1% | pass |
+| 40 m | 128.8 ms | 132.8 ms | 86.5% | pass |
+
+At 20 m, the smoothing-loop P50 fell from `117.4 ms` in Phase 2 to
+`40.5 ms`; optimizer P50 is `66.8 ms`, below the `100 ms` gate. All five P50
+and P95 gates now pass with both shadows enabled. Shadow-off P50 is
+`4.7/11.7/26.1/54.2/111.7 ms` for 2/5/10/20/40 m.
+
+The dedicated local-triple function matches general validation within
+`1e-12` over 250 seeded cases. Five deterministic lengths and both retained
+real snapshots still have exact (`0.0`) XY, quaternion, candidate report, and
+alpha equality against Phase 0. No native dependency or safety-rule change was
+introduced.
+
+Artifacts:
+
+- `docs/development/validation/path-smoothing-performance/2026-07-17/phase3-smoothing-loop.json`
+- `docs/development/validation/path-smoothing-performance/2026-07-17/phase3-smoothing-loop.csv`
+- `docs/development/validation/path-smoothing-performance/2026-07-17/phase3-equivalence.json`
+
 ## 10. Functional Equivalence Test Plan
 
 ### 10.1 Arc-Length Resampling Tests
@@ -749,8 +784,8 @@ The optimization is complete only when the repository contains:
 - [ ] Phase 1 equivalence and performance gate passed.
 - [x] Phase 2 direct grid-index path implemented.
 - [x] Randomized cost and boundary equivalence passed.
-- [ ] Offline 2/5/10/20/40 m P50/P95 gates passed.
-- [ ] Optional Phase 3 decision recorded.
+- [x] Offline 2/5/10/20/40 m P50/P95 gates passed.
+- [x] Optional Phase 3 decision recorded.
 - [ ] Fixed-robot MuJoCo 100-plan gate passed.
 - [ ] Moving-robot integration gate passed.
 - [ ] CPU/RSS and viewer latency reported.
