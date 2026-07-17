@@ -1,0 +1,69 @@
+{
+  "phase0_source": "/home/markus/work/dimos_m20/dimos/mapping/occupancy/path_resampling.py",
+  "optimized_source": "/home/markus/work/dimos_m20_path_smoothing_perf/dimos/mapping/occupancy/path_resampling.py",
+  "cases": [
+    {
+      "case": "synthetic-2m",
+      "point_count_equal": true,
+      "max_xy_error_m": 0.0,
+      "max_quaternion_error": 0.0,
+      "legacy_selected_alpha_equal": true,
+      "physical_selected_alpha_equal": true,
+      "candidate_report_equal": true
+    },
+    {
+      "case": "synthetic-5m",
+      "point_count_equal": true,
+      "max_xy_error_m": 0.0,
+      "max_quaternion_error": 0.0,
+      "legacy_selected_alpha_equal": true,
+      "physical_selected_alpha_equal": true,
+      "candidate_report_equal": true
+    },
+    {
+      "case": "synthetic-10m",
+      "point_count_equal": true,
+      "max_xy_error_m": 0.0,
+      "max_quaternion_error": 0.0,
+      "legacy_selected_alpha_equal": true,
+      "physical_selected_alpha_equal": true,
+      "candidate_report_equal": true
+    },
+    {
+      "case": "synthetic-20m",
+      "point_count_equal": true,
+      "max_xy_error_m": 0.0,
+      "max_quaternion_error": 0.0,
+      "legacy_selected_alpha_equal": true,
+      "physical_selected_alpha_equal": true,
+      "candidate_report_equal": true
+    },
+    {
+      "case": "synthetic-40m",
+      "point_count_equal": true,
+      "max_xy_error_m": 0.0,
+      "max_quaternion_error": 0.0,
+      "legacy_selected_alpha_equal": true,
+      "physical_selected_alpha_equal": true,
+      "candidate_report_equal": true
+    },
+    {
+      "case": "real-planning",
+      "point_count_equal": true,
+      "max_xy_error_m": 0.0,
+      "max_quaternion_error": 0.0,
+      "legacy_selected_alpha_equal": true,
+      "physical_selected_alpha_equal": true,
+      "candidate_report_equal": true
+    },
+    {
+      "case": "real-detour",
+      "point_count_equal": true,
+      "max_xy_error_m": 0.0,
+      "max_quaternion_error": 0.0,
+      "legacy_selected_alpha_equal": true,
+      "physical_selected_alpha_equal": true,
+      "candidate_report_equal": true
+    }
+  ]
+}

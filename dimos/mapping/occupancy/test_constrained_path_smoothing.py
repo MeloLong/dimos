@@ -3,10 +3,14 @@ import math
 from unittest.mock import patch
 
 import numpy as np
+import pytest
 
 from dimos.mapping.occupancy.path_resampling import (
     ConstrainedPathSmoothingConfig,
     _path_cost_validation,
+    _path_from_xy,
+    _resample_xy,
+    _resample_xy_array,
     _select_backtracked_path,
     constrained_smooth_resample_path,
     simple_resample_path,
@@ -125,6 +129,84 @@ def test_constrained_smoothing_records_complete_phase_timing() -> None:
     assert timing["raw_path_length_m"] > 0
     assert timing["smoothing_iterations"] > 0
     assert timing["optimizer_total_ms"] > 0
+
+
+@pytest.mark.parametrize(
+    ("points", "spacing"),
+    [
+        ([(0.0, 0.0)], 0.1),
+        ([(0.0, 0.0), (0.05, 0.0)], 0.1),
+        ([(0.0, 0.0), (0.0, 0.3)], 0.1),
+        ([(0.0, 0.0), (0.3, 0.3)], 0.07),
+        ([(0.0, 0.0), (0.2, 0.0), (0.2, 0.0), (0.35, 0.1), (0.7, 0.1)], 0.1),
+        ([(0.0, 0.0), (0.1, 0.0), (0.2, 0.0), (0.3, 0.0)], 0.1),
+        ([(0.2, 0.3), (0.2, 0.3), (0.2, 0.3)], 0.1),
+        ([(-0.7, -0.3), (-0.4, -0.1), (-0.2, -0.5), (0.1, -0.2)], 0.08),
+    ],
+)
+def test_array_resampler_matches_message_resampler(points, spacing) -> None:
+    source = _path(points)
+    goal = Pose(position=source.poses[-1].position)
+
+    expected = simple_resample_path(source, goal, spacing)
+    actual = _resample_xy_array(np.asarray(points, dtype=np.float64), spacing)
+    actual_path = _resample_xy(source, np.asarray(points, dtype=np.float64), goal, spacing)
+
+    np.testing.assert_allclose(actual, [[pose.x, pose.y] for pose in expected.poses], atol=1e-12)
+    np.testing.assert_allclose(
+        [[pose.x, pose.y] for pose in actual_path.poses],
+        [[pose.x, pose.y] for pose in expected.poses],
+        atol=1e-12,
+    )
+    np.testing.assert_allclose(
+        [
+            [pose.orientation.x, pose.orientation.y, pose.orientation.z, pose.orientation.w]
+            for pose in actual_path.poses
+        ],
+        [
+            [pose.orientation.x, pose.orientation.y, pose.orientation.z, pose.orientation.w]
+            for pose in expected.poses
+        ],
+        atol=1e-12,
+    )
+    np.testing.assert_array_equal(actual[0], points[0])
+    np.testing.assert_array_equal(actual[-1], points[-1])
+
+
+def test_array_resampler_matches_message_resampler_for_random_polylines() -> None:
+    rng = np.random.default_rng(20260717)
+    for point_count in (2, 3, 10, 100):
+        points = np.cumsum(rng.normal(0.0, 0.1, size=(point_count, 2)), axis=0)
+        points[point_count // 2] = points[max(0, point_count // 2 - 1)]
+        source = _path([tuple(point) for point in points])
+        goal = Pose(position=source.poses[-1].position)
+        expected = simple_resample_path(source, goal, 0.07)
+
+        actual = _resample_xy_array(points, 0.07)
+
+        np.testing.assert_allclose(
+            actual, [[pose.x, pose.y] for pose in expected.poses], atol=1e-12
+        )
+
+
+def test_constrained_smoothing_constructs_one_final_path_message() -> None:
+    raw = _path([(0.2 + i * 0.1, 1.0 + (0.04 if i % 2 else -0.04)) for i in range(25)])
+
+    with patch(
+        "dimos.mapping.occupancy.path_resampling._path_from_xy",
+        wraps=_path_from_xy,
+    ) as build_path:
+        constrained_smooth_resample_path(
+            raw,
+            Pose(position=raw.poses[-1].position),
+            _costmap(),
+            ConstrainedPathSmoothingConfig(
+                validator_shadow_enabled=True,
+                physical_validator_shadow_enabled=True,
+            ),
+        )
+
+    assert build_path.call_count == 1
 
 
 def test_path_cost_validation_reports_rejection_reason() -> None:

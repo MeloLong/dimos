@@ -543,16 +543,70 @@ def _path_from_xy(path: Path, points: np.ndarray) -> Path:
     )
 
 
+def _resample_xy_array(points: np.ndarray, spacing_m: float) -> np.ndarray:
+    """Resample XY geometry without constructing ROS-style message objects."""
+    if len(points) < 2 or spacing_m <= 0:
+        return points.copy()
+
+    # Preserve the legacy arithmetic order exactly: boundary-cell selection can
+    # change when an otherwise negligible interpolation difference crosses a grid line.
+    resampled = [(float(points[0, 0]), float(points[0, 1]))]
+    accumulated_distance = 0.0
+    for index in range(1, len(points)):
+        current_x = float(points[index, 0])
+        current_y = float(points[index, 1])
+        previous_x = float(points[index - 1, 0])
+        previous_y = float(points[index - 1, 1])
+        dx = current_x - previous_x
+        dy = current_y - previous_y
+        segment_length = (dx**2 + dy**2) ** 0.5
+        if segment_length < 1e-10:
+            continue
+
+        direction_x = dx / segment_length
+        direction_y = dy / segment_length
+        while accumulated_distance + segment_length >= spacing_m:
+            distance_along = spacing_m - accumulated_distance
+            if distance_along < 0:
+                break
+            previous_x += direction_x * distance_along
+            previous_y += direction_y * distance_along
+            resampled.append((previous_x, previous_y))
+            accumulated_distance = 0.0
+            segment_length -= distance_along
+
+        accumulated_distance += segment_length
+
+    final_point = (float(points[-1, 0]), float(points[-1, 1]))
+    if resampled[-1] != final_point:
+        resampled.append(final_point)
+    return np.asarray(resampled, dtype=np.float64)
+
+
+def _finalize_xy_path(
+    source_path: Path,
+    points: np.ndarray,
+    goal_pose: Pose,
+    timing: dict[str, float | int] | None,
+) -> Path:
+    started = perf_counter()
+    result = _path_from_xy(source_path, points)
+    _add_orientations_to_path(result, goal_pose.orientation)
+    _record_elapsed(timing, "final_path_message_ms", started)
+    return result
+
+
 def _resample_xy(
     source_path: Path,
     points: np.ndarray,
     goal_pose: Pose,
     spacing_m: float,
 ) -> Path:
-    return simple_resample_path(
-        _path_from_xy(source_path, points),
+    return _finalize_xy_path(
+        source_path,
+        _resample_xy_array(points, spacing_m),
         goal_pose,
-        spacing_m,
+        None,
     )
 
 
@@ -571,13 +625,7 @@ def _select_backtracked_path(
     )
     metrics_enabled = config.validator_shadow_enabled or physical_validator_enabled
     raw_metrics_started = perf_counter()
-    raw_message_started = perf_counter()
-    raw_resampled = _resample_xy(source_path, original, goal_pose, config.spacing_m)
-    raw_message_ms = (perf_counter() - raw_message_started) * 1000
-    raw_resampled_points = np.array(
-        [[pose.x, pose.y] for pose in raw_resampled.poses],
-        dtype=np.float64,
-    )
+    raw_resampled_points = _resample_xy_array(original, config.spacing_m)
     clearance_started = perf_counter()
     clearance_grid = _lethal_clearance_grid(costmap) if metrics_enabled else None
     clearance_transform_ms = (perf_counter() - clearance_started) * 1000
@@ -604,8 +652,6 @@ def _select_backtracked_path(
         )
     _record_elapsed(timing, "raw_resample_metrics_ms", raw_metrics_started)
     if baseline_cost is None:
-        if timing is not None:
-            timing["final_path_message_ms"] = raw_message_ms
         if raw_metrics is not None:
             shadow_report = {
                 "legacy_selected_alpha": None,
@@ -639,7 +685,7 @@ def _select_backtracked_path(
             raw_points=len(original),
             baseline_points=len(raw_resampled_points),
         )
-        return raw_resampled
+        return _finalize_xy_path(source_path, raw_resampled_points, goal_pose, timing)
 
     max_allowed_cost = baseline_cost + config.max_cost_increase
     full_offset = smoothed - original
@@ -647,25 +693,16 @@ def _select_backtracked_path(
         config.backtracking_factor**step for step in range(config.max_backtracking_steps + 1)
     ]
     rejected_fractions: list[float] = []
-    selected_path: Path | None = None
+    selected_points: np.ndarray | None = None
     selected_alpha: float | None = None
     shadow_candidates: list[dict[str, object]] = []
     candidate_metrics_by_alpha: list[tuple[float, PathPhysicalMetrics]] = []
-    candidate_paths_by_alpha: dict[float, Path] = {}
-    candidate_message_ms_by_alpha: dict[float, float] = {}
+    candidate_points_by_alpha: dict[float, np.ndarray] = {}
 
     for fraction in fractions:
         candidate_started = perf_counter()
         blended = original + fraction * full_offset
-        candidate_message_started = perf_counter()
-        candidate_path = _resample_xy(source_path, blended, goal_pose, config.spacing_m)
-        candidate_message_ms_by_alpha[fraction] = (
-            perf_counter() - candidate_message_started
-        ) * 1000
-        candidate_points = np.array(
-            [[pose.x, pose.y] for pose in candidate_path.poses],
-            dtype=np.float64,
-        )
+        candidate_points = _resample_xy_array(blended, config.spacing_m)
         if metrics_enabled:
             evaluation_started = perf_counter()
             candidate_metrics = _path_physical_metrics(
@@ -678,7 +715,7 @@ def _select_backtracked_path(
             candidate_cost = candidate_metrics.mean_cost
             failure_reason = candidate_metrics.validation_reason
             candidate_metrics_by_alpha.append((fraction, candidate_metrics))
-            candidate_paths_by_alpha[fraction] = candidate_path
+            candidate_points_by_alpha[fraction] = candidate_points
         else:
             candidate_metrics = None
             candidate_cost, failure_reason = _path_cost_validation(
@@ -707,8 +744,8 @@ def _select_backtracked_path(
 
         if rejection_reason is None:
             assert candidate_cost is not None
-            if selected_path is None:
-                selected_path = candidate_path
+            if selected_points is None:
+                selected_points = candidate_points
                 selected_alpha = fraction
                 logger.info(
                     "Constrained path smoothing accepted.",
@@ -725,10 +762,10 @@ def _select_backtracked_path(
                     ),
                 )
                 if not metrics_enabled:
-                    return candidate_path
+                    return _finalize_xy_path(source_path, candidate_points, goal_pose, timing)
             continue
 
-        if selected_path is None:
+        if selected_points is None:
             rejected_fractions.append(round(fraction, 4))
             logger.info(
                 "Constrained path smoothing fraction rejected.",
@@ -778,7 +815,7 @@ def _select_backtracked_path(
             ),
             "legacy_max_allowed_cost": round(max_allowed_cost, 4),
             "selected_alpha": selected_alpha,
-            "selected_path": "raw_resampled" if selected_path is None else "candidate",
+            "selected_path": "raw_resampled" if selected_points is None else "candidate",
             "raw_baseline_valid": True,
             "raw": _metrics_for_log(raw_metrics),
             "candidates": shadow_candidates,
@@ -792,23 +829,22 @@ def _select_backtracked_path(
             "Candidate path validator shadow metrics.",
             shadow_report=json.dumps(shadow_report, separators=(",", ":")),
             selected_alpha=None if selected_alpha is None else round(selected_alpha, 4),
-            selected_path="raw_resampled" if selected_path is None else "candidate",
+            selected_path="raw_resampled" if selected_points is None else "candidate",
             legacy_max_allowed_cost=round(max_allowed_cost, 4),
         )
 
     if config.physical_validator_authoritative_enabled:
         if physical_selected_alpha is None:
-            if timing is not None:
-                timing["final_path_message_ms"] = raw_message_ms
-            return raw_resampled
-        if timing is not None:
-            timing["final_path_message_ms"] = candidate_message_ms_by_alpha[physical_selected_alpha]
-        return candidate_paths_by_alpha[physical_selected_alpha]
+            return _finalize_xy_path(source_path, raw_resampled_points, goal_pose, timing)
+        return _finalize_xy_path(
+            source_path,
+            candidate_points_by_alpha[physical_selected_alpha],
+            goal_pose,
+            timing,
+        )
 
-    if selected_path is not None:
-        if timing is not None and selected_alpha is not None:
-            timing["final_path_message_ms"] = candidate_message_ms_by_alpha[selected_alpha]
-        return selected_path
+    if selected_points is not None:
+        return _finalize_xy_path(source_path, selected_points, goal_pose, timing)
 
     logger.warning(
         "All constrained smoothing fractions failed; using raw-resampled A* path.",
@@ -817,9 +853,7 @@ def _select_backtracked_path(
         max_allowed_cost=round(max_allowed_cost, 3),
         raw_points=len(original),
     )
-    if timing is not None:
-        timing["final_path_message_ms"] = raw_message_ms
-    return raw_resampled
+    return _finalize_xy_path(source_path, raw_resampled_points, goal_pose, timing)
 
 
 def constrained_smooth_resample_path(
@@ -833,12 +867,10 @@ def constrained_smooth_resample_path(
     optimizer_started = perf_counter()
     _initialize_smoothing_timing(timing, path, costmap)
     try:
-        raw_message_started = perf_counter()
-        raw_resampled = simple_resample_path(path, goal_pose, config.spacing_m)
-        raw_message_ms = (perf_counter() - raw_message_started) * 1000
         if len(path) < 3 or config.max_iterations == 0 or config.max_deviation_m == 0:
-            if timing is not None:
-                timing["final_path_message_ms"] = raw_message_ms
+            raw_message_started = perf_counter()
+            raw_resampled = simple_resample_path(path, goal_pose, config.spacing_m)
+            _record_elapsed(timing, "final_path_message_ms", raw_message_started)
             _log_raw_only_validator_shadow(
                 raw_resampled,
                 costmap,
@@ -852,8 +884,9 @@ def constrained_smooth_resample_path(
         duplicate = np.linalg.norm(np.diff(original, axis=0), axis=1) <= 1e-10
         original = original[np.concatenate(([True], ~duplicate))]
         if len(original) < 3:
-            if timing is not None:
-                timing["final_path_message_ms"] = raw_message_ms
+            raw_message_started = perf_counter()
+            raw_resampled = simple_resample_path(path, goal_pose, config.spacing_m)
+            _record_elapsed(timing, "final_path_message_ms", raw_message_started)
             _log_raw_only_validator_shadow(
                 raw_resampled,
                 costmap,
@@ -871,8 +904,9 @@ def constrained_smooth_resample_path(
         )
         _record_elapsed(timing, "raw_validation_ms", raw_validation_started)
         if raw_cost is None:
-            if timing is not None:
-                timing["final_path_message_ms"] = raw_message_ms
+            raw_message_started = perf_counter()
+            raw_resampled = simple_resample_path(path, goal_pose, config.spacing_m)
+            _record_elapsed(timing, "final_path_message_ms", raw_message_started)
             _log_raw_only_validator_shadow(
                 raw_resampled,
                 costmap,

@@ -333,6 +333,51 @@ Phase 1 passes when:
 - no candidate, metric, report, or selected-alpha field disappears;
 - no new fallback or invalid-baseline case appears.
 
+### 7.5 Phase 1 Result (2026-07-17)
+
+**Status: functional gate passed; standalone performance gate not passed.**
+The implementation keeps raw and alpha candidates as float64 XY arrays,
+removes the eager normal-path resample, and constructs exactly one final
+message. Public `simple_resample_path()` remains unchanged.
+
+The first vectorized interpolation prototype differed by only
+`10^-15-10^-14 m`, but a real snapshot had samples exactly on grid boundaries;
+the tiny difference changed P5 clearance cells. It was rejected. The accepted
+array resampler preserves the legacy arithmetic order without creating
+messages and achieved exact (`0.0`) XY and quaternion equality on all retained
+comparison cases.
+
+| Length | Phase 0 P50/P95 | Phase 1 P50/P95 | P50 reduction |
+|---:|---:|---:|---:|
+| 2 m | 47.0 / 48.8 ms | 33.0 / 35.2 ms | 29.7% |
+| 5 m | 109.6 / 112.9 ms | 75.1 / 78.2 ms | 31.4% |
+| 10 m | 234.7 / 241.8 ms | 172.3 / 180.8 ms | 26.6% |
+| 20 m | 479.1 / 492.0 ms | 358.7 / 376.6 ms | 25.1% |
+| 40 m | 953.4 / 985.9 ms | 691.6 / 715.5 ms | 27.5% |
+
+At 20 m, each candidate evaluation fell from about `30.5 ms` to
+`3.2 ms`, while the remaining smoothing loop was `315.9 ms` P50. Therefore the
+array/message objective succeeded, but the total 20 m improvement did not meet
+the standalone 35% gate. The residual is the object-heavy grid conversion that
+Phase 2 explicitly targets, not candidate allocation. Phase 2 is authorized as
+the required continuation; the combined gate is not waived.
+
+Equivalence evidence:
+
+- 5 deterministic lengths and both retained real snapshots had exact point
+  count, XY, quaternion, legacy alpha, physical alpha, and candidate-report
+  equality against Phase 0;
+- straight, vertical, diagonal, repeated, exact-spacing, longer-than-path,
+  negative-coordinate, and seeded random polyline resampling tests passed;
+- normal shadow execution constructs one final Path message;
+- no candidate field, rejection reason, fallback, or invalid baseline changed.
+
+Artifacts:
+
+- `docs/development/validation/path-smoothing-performance/2026-07-17/phase1-array-candidates.json`
+- `docs/development/validation/path-smoothing-performance/2026-07-17/phase1-array-candidates.csv`
+- `docs/development/validation/path-smoothing-performance/2026-07-17/phase1-equivalence.json`
+
 ## 8. Phase 2: Replace Object-Heavy Grid Conversion
 
 ### 8.1 Implementation
@@ -647,8 +692,8 @@ The optimization is complete only when the repository contains:
 
 - [x] Phase 0 timing fields implemented and baseline frozen.
 - [x] Benchmark runner and deterministic fixtures added.
-- [ ] Phase 1 array-only candidate pipeline implemented.
-- [ ] Duplicate eager resampling removed.
+- [x] Phase 1 array-only candidate pipeline implemented.
+- [x] Duplicate eager resampling removed.
 - [ ] Phase 1 equivalence and performance gate passed.
 - [ ] Phase 2 direct grid-index path implemented.
 - [ ] Randomized cost and boundary equivalence passed.
