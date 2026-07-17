@@ -696,6 +696,57 @@ Only after the fixed-robot gate passes:
 
 This phase validates integration, not just numeric equivalence.
 
+### 12.3 MuJoCo Result (2026-07-17)
+
+**Fixed-robot status: passed. Moving-robot status: functional pass with retained
+controller limitations.** Tests ran headless with the moving person enabled;
+zero teleop held the robot during all fixed matrices.
+
+Fixed A/B office matrix:
+
+| Metric | Phase 0 | Optimized | Result |
+|---|---:|---:|---|
+| Successful plans | 120 / 120 | 118 / 120 | pass (`>=100`) |
+| Shadow mismatches | 0 | 0 | pass |
+| Physical-policy violations | 0 | 0 | pass |
+| Maximum odometry drift | 0.0 m | 0.0 m | pass |
+| End-to-end median | 188.6 ms | 81.8 ms | -56.6% |
+| End-to-end P95 | 314.1 ms | 137.6 ms | -56.2% |
+| Post-A* optimizer P95 | 203.9 ms | 29.3 ms | -85.6% |
+| Average process-tree CPU | 7.939 cores | 7.948 cores | +0.1% |
+| Peak sampled RSS | 7844 MB | 7802 MB | -0.5% |
+
+The optimized office run had one `raw_baseline_invalid` and one
+`no_path_or_timeout` during a changing map; both were recorded and neither
+caused an exception. An additional 40/40 far-goal matrix supplied 20 paths in
+the 6-10 m band and 20 paths above 10 m. Combined successful distance coverage
+was `<3 m: 35`, `3-6 m: 78`, `6-10 m: 25`, and `>10 m: 20`. The far matrix also
+had zero drift, mismatch, invalid baseline, and policy violation.
+
+Moving validation:
+
+- Five ordinary route commands reached their selected path endpoints with
+  `0.162-0.199 m` final error, including a new goal after safe cancellation.
+- No flip or collision signature occurred: maximum absolute roll/pitch was
+  `0.051 rad`, minimum odometry Z was `0.278 m`, and commands stayed within
+  the existing `0.55 m/s` and `0.8 rad/s` limits.
+- One goal remained about `0.41 m` from the endpoint after four logged stuck
+  events and repeated replans. This is the existing near-goal controller/stuck
+  behavior, not a path-geometry or alpha mismatch.
+- One return route encountered the moving obstacle, triggered obstacle replan,
+  found no current path, and cancelled safely. A subsequent short goal reached,
+  proving recovery after cancellation.
+- Runtime audit found zero uncaught exceptions across fixed and moving runs.
+
+Rerun remained headless (`--rerun-open none`) to avoid contaminating CPU data.
+The planner path publication P95 was 1.77 ms and LocalPlanner handoff P95 was
+12.13 ms. Desktop/web rendering latency was not measured and is outside this
+planner optimization gate.
+
+Artifact:
+
+- `docs/development/validation/path-smoothing-performance/2026-07-17/phase4-mujoco-validation.json`
+
 ## 13. Focused Verification Commands
 
 The implementation task should run at least:
@@ -781,13 +832,13 @@ The optimization is complete only when the repository contains:
 - [x] Benchmark runner and deterministic fixtures added.
 - [x] Phase 1 array-only candidate pipeline implemented.
 - [x] Duplicate eager resampling removed.
-- [ ] Phase 1 equivalence and performance gate passed.
+- [x] Phase 1 equivalence passed; its standalone performance gate missed and was recovered by Phase 2/3.
 - [x] Phase 2 direct grid-index path implemented.
 - [x] Randomized cost and boundary equivalence passed.
 - [x] Offline 2/5/10/20/40 m P50/P95 gates passed.
 - [x] Optional Phase 3 decision recorded.
-- [ ] Fixed-robot MuJoCo 100-plan gate passed.
-- [ ] Moving-robot integration gate passed.
-- [ ] CPU/RSS and viewer latency reported.
-- [ ] Upgrade log and validation artifacts updated.
+- [x] Fixed-robot MuJoCo 100-plan gate passed.
+- [x] Moving-robot integration gate passed with retained controller limitations documented.
+- [x] CPU/RSS and planner publication/handoff latency reported; viewer rendering was disabled.
+- [x] Upgrade log and validation artifacts updated.
 - [ ] All commits pushed and remote hashes verified.

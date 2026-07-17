@@ -1,0 +1,657 @@
+{
+  "baseline_commit": "d17323904c93deff9db8dad88122167c0433730e",
+  "optimized_commit": "71cfd20a0794a603214d1dfaf400a1cb3f325518",
+  "fixed_robot": {
+    "phase0": {
+      "summary": {
+        "cases": 120,
+        "planned": 120,
+        "status_counts": {
+          "planned": 120
+        },
+        "no_path_or_timeout": 0,
+        "shadow_record_mismatch": 0,
+        "raw_baseline_invalid": 0,
+        "selection_counts": {
+          "0.5": 10,
+          "1.0": 105,
+          "raw": 5
+        },
+        "physical_selection_counts": {
+          "0.125": 5,
+          "0.25": 7,
+          "0.5": 8,
+          "1.0": 49,
+          "raw": 51
+        },
+        "physical_decision_matches": 44,
+        "physical_policy_violations": 0,
+        "max_odom_drift_m": 0.0,
+        "hard_invalid_candidates": 0,
+        "unknown_increase_candidates": 339,
+        "selected_deltas": {
+          "min_clearance_loss_m": {
+            "min": -0.0298,
+            "p05": -0.0186,
+            "median": 0.0,
+            "p95": 0.0,
+            "max": 0.0379
+          },
+          "p5_clearance_loss_m": {
+            "min": -0.0486,
+            "p05": -0.0204,
+            "median": 0.0054,
+            "p95": 0.0554,
+            "max": 0.0569
+          },
+          "unknown_length_increase_m": {
+            "min": -0.1222,
+            "p05": -0.0486,
+            "median": 0.0029,
+            "p95": 0.0517,
+            "max": 0.0667
+          },
+          "unknown_ratio_increase": {
+            "min": -0.0199,
+            "p05": -0.0064,
+            "median": 0.0023,
+            "p95": 0.0156,
+            "max": 0.0199
+          },
+          "path_length_change_m": {
+            "min": -0.2538,
+            "p05": -0.1767,
+            "median": -0.0768,
+            "p95": -0.0214,
+            "max": -0.0167
+          },
+          "cumulative_turn_change_rad": {
+            "min": -10.3499,
+            "p05": -8.5149,
+            "median": -2.9275,
+            "p95": -0.1312,
+            "max": -0.0888
+          }
+        },
+        "planner_latency_ms": {
+          "min": 59.3632,
+          "p05": 65.5207,
+          "median": 188.6154,
+          "p95": 314.0575,
+          "max": 401.4716
+        },
+        "log_bytes_per_case": {
+          "min": 4301.0,
+          "p05": 4332.5,
+          "median": 5004.5,
+          "p95": 6298.4,
+          "max": 7445.0
+        }
+      },
+      "resources": {
+        "root_pid": 1665735,
+        "elapsed_s": 115.3489,
+        "average_cpu_cores": 7.9391,
+        "start_rss_mb": 7504.734,
+        "end_rss_mb": 7844.34,
+        "peak_sampled_rss_mb": 7844.34,
+        "peak_processes": 18
+      }
+    },
+    "optimized_office": {
+      "summary": {
+        "cases": 120,
+        "planned": 118,
+        "status_counts": {
+          "no_path_or_timeout": 1,
+          "planned": 118,
+          "raw_baseline_invalid": 1
+        },
+        "no_path_or_timeout": 1,
+        "shadow_record_mismatch": 0,
+        "raw_baseline_invalid": 1,
+        "selection_counts": {
+          "0.5": 11,
+          "1.0": 107
+        },
+        "physical_selection_counts": {
+          "0.125": 5,
+          "0.25": 8,
+          "0.5": 5,
+          "1.0": 60,
+          "raw": 40
+        },
+        "physical_decision_matches": 49,
+        "physical_policy_violations": 0,
+        "max_odom_drift_m": 0.0,
+        "hard_invalid_candidates": 2,
+        "unknown_increase_candidates": 231,
+        "selected_deltas": {
+          "min_clearance_loss_m": {
+            "min": -0.0298,
+            "p05": -0.0275,
+            "median": 0.0,
+            "p95": 0.0063,
+            "max": 0.05
+          },
+          "p5_clearance_loss_m": {
+            "min": -0.0425,
+            "p05": -0.0219,
+            "median": 0.0014,
+            "p95": 0.0338,
+            "max": 0.0564
+          },
+          "unknown_length_increase_m": {
+            "min": -0.1471,
+            "p05": -0.0583,
+            "median": 0.0,
+            "p95": 0.0332,
+            "max": 0.0501
+          },
+          "unknown_ratio_increase": {
+            "min": -0.0308,
+            "p05": -0.0104,
+            "median": 0.0022,
+            "p95": 0.0175,
+            "max": 0.0382
+          },
+          "path_length_change_m": {
+            "min": -0.1748,
+            "p05": -0.1527,
+            "median": -0.0775,
+            "p95": -0.0391,
+            "max": -0.0214
+          },
+          "cumulative_turn_change_rad": {
+            "min": -10.1371,
+            "p05": -7.012,
+            "median": -2.3489,
+            "p95": -0.1023,
+            "max": 0.0
+          }
+        },
+        "planner_latency_ms": {
+          "min": 38.7603,
+          "p05": 42.9226,
+          "median": 81.8145,
+          "p95": 137.6365,
+          "max": 287.709
+        },
+        "log_bytes_per_case": {
+          "min": 2911.0,
+          "p05": 4355.6,
+          "median": 4648.5,
+          "p95": 6348.2,
+          "max": 7283.0
+        }
+      },
+      "resources": {
+        "root_pid": 1660543,
+        "elapsed_s": 105.6461,
+        "average_cpu_cores": 7.9476,
+        "start_rss_mb": 7446.781,
+        "end_rss_mb": 7802.25,
+        "peak_sampled_rss_mb": 7802.25,
+        "peak_processes": 18
+      }
+    },
+    "optimized_far": {
+      "summary": {
+        "cases": 40,
+        "planned": 40,
+        "status_counts": {
+          "planned": 40
+        },
+        "no_path_or_timeout": 0,
+        "shadow_record_mismatch": 0,
+        "raw_baseline_invalid": 0,
+        "selection_counts": {
+          "1.0": 40
+        },
+        "physical_selection_counts": {
+          "0.25": 3,
+          "0.5": 17,
+          "raw": 20
+        },
+        "physical_decision_matches": 0,
+        "physical_policy_violations": 0,
+        "max_odom_drift_m": 0.0,
+        "hard_invalid_candidates": 0,
+        "unknown_increase_candidates": 106,
+        "selected_deltas": {
+          "min_clearance_loss_m": {
+            "min": -0.05,
+            "p05": -0.05,
+            "median": -0.025,
+            "p95": 0.0,
+            "max": 0.0
+          },
+          "p5_clearance_loss_m": {
+            "min": -0.0415,
+            "p05": -0.0415,
+            "median": -0.0182,
+            "p95": 0.0045,
+            "max": 0.0045
+          },
+          "unknown_length_increase_m": {
+            "min": 0.002,
+            "p05": 0.002,
+            "median": 0.0423,
+            "p95": 0.0622,
+            "max": 0.0622
+          },
+          "unknown_ratio_increase": {
+            "min": 0.0047,
+            "p05": 0.0047,
+            "median": 0.009,
+            "p95": 0.0117,
+            "max": 0.0117
+          },
+          "path_length_change_m": {
+            "min": -0.2403,
+            "p05": -0.2403,
+            "median": -0.1979,
+            "p95": -0.1542,
+            "max": -0.1542
+          },
+          "cumulative_turn_change_rad": {
+            "min": -12.5551,
+            "p05": -12.5551,
+            "median": -9.8192,
+            "p95": -6.8835,
+            "max": -6.8835
+          }
+        },
+        "planner_latency_ms": {
+          "min": 81.6806,
+          "p05": 82.3553,
+          "median": 226.7099,
+          "p95": 374.2458,
+          "max": 417.2336
+        },
+        "log_bytes_per_case": {
+          "min": 4321.0,
+          "p05": 4322.9,
+          "median": 4958.5,
+          "p95": 6258.55,
+          "max": 6331.0
+        }
+      },
+      "resources": {
+        "root_pid": 1690132,
+        "elapsed_s": 40.0061,
+        "average_cpu_cores": 8.1125,
+        "start_rss_mb": 7577.422,
+        "end_rss_mb": 7696.398,
+        "peak_sampled_rss_mb": 7696.141,
+        "peak_processes": 18
+      }
+    },
+    "distance_bin_successes": {
+      "below_3_m": 35,
+      "3_to_6_m": 78,
+      "6_to_10_m": 25,
+      "above_10_m": 20
+    },
+    "phase0_timing": {
+      "records": 120,
+      "distributions": {
+        "optimizer_total_ms": {
+          "p50": 117.7570955187548,
+          "p95": 203.85646724607795,
+          "max": 244.96584397275
+        },
+        "smoothing_loop_ms": {
+          "p50": 69.03130651335232,
+          "p95": 127.14923349849414,
+          "max": 166.79823899175972
+        },
+        "raw_resample_metrics_ms": {
+          "p50": 11.685596517054364,
+          "p95": 17.7451538562309,
+          "max": 28.393000015057623
+        },
+        "final_path_message_ms": {
+          "p50": 6.440769007895142,
+          "p95": 11.063641041982919,
+          "max": 19.950392015744
+        },
+        "path_publish_ms": {
+          "p50": 0.7162940164562315,
+          "p95": 1.0827724181581289,
+          "max": 2.2997980122454464
+        },
+        "local_planner_handoff_ms": {
+          "p50": 0.9251900191884488,
+          "p95": 13.575478980783371,
+          "max": 18.069220008328557
+        }
+      }
+    },
+    "optimized_timing": {
+      "records": 119,
+      "distributions": {
+        "optimizer_total_ms": {
+          "p50": 19.761306990403682,
+          "p95": 29.303386277751997,
+          "max": 32.7393879997544
+        },
+        "smoothing_loop_ms": {
+          "p50": 8.730567991733551,
+          "p95": 14.687567792134356,
+          "max": 20.712644036393613
+        },
+        "raw_resample_metrics_ms": {
+          "p50": 4.375137970782816,
+          "p95": 5.436453502625227,
+          "max": 16.85384102165699
+        },
+        "final_path_message_ms": {
+          "p50": 3.23696801206097,
+          "p95": 5.185698409331962,
+          "max": 10.918323998339474
+        },
+        "path_publish_ms": {
+          "p50": 0.7738349959254265,
+          "p95": 1.7708716390188748,
+          "max": 12.63099501375109
+        },
+        "local_planner_handoff_ms": {
+          "p50": 0.8156690164469182,
+          "p95": 12.131981115089724,
+          "max": 20.394810009747744
+        }
+      }
+    },
+    "post_astar_p95_reduction_percent": 85.6254811664231,
+    "end_to_end_p95_reduction_percent": 56.17474507056828,
+    "average_cpu_regression_percent": 0.1070650325603717,
+    "peak_rss_regression_percent": -0.5365652177238611,
+    "gate": {
+      "at_least_100_successful": true,
+      "distance_bins_covered": true,
+      "zero_shadow_mismatch": true,
+      "zero_policy_violations": true,
+      "max_odom_drift_le_0_01_m": true,
+      "post_astar_p95_reduced_ge_50_percent": true,
+      "end_to_end_p95_reduced_ge_35_percent": true,
+      "cpu_regression_le_10_percent": true,
+      "rss_regression_le_10_percent": true
+    }
+  },
+  "moving_robot": {
+    "attempt_1": {
+      "goals": [
+        {
+          "goal": [
+            -2.0,
+            1.5
+          ],
+          "path_endpoint": [
+            -2.0249999947845936,
+            1.4749997816979885
+          ],
+          "status": "reached",
+          "duration_s": 31.859,
+          "start": [
+            -1.0057144029672522,
+            1.0000294961236065
+          ],
+          "final": [
+            -1.8612080716890311,
+            1.5703214992390053
+          ],
+          "endpoint_error_m": 0.1895,
+          "path_updates": 1,
+          "max_linear_command_m_s": 0.4207,
+          "max_angular_command_rad_s": 0.8,
+          "max_abs_roll_pitch_rad": 0.0413,
+          "min_odom_z_m": 0.282
+        },
+        {
+          "goal": [
+            -4.0,
+            2.5
+          ],
+          "path_endpoint": [
+            -4.025000024586916,
+            2.4749997965991497
+          ],
+          "status": "reached",
+          "duration_s": 29.058,
+          "start": [
+            -1.8612080716890311,
+            1.5703214992390053
+          ],
+          "final": [
+            -3.8771148975186924,
+            2.5962717242854945
+          ],
+          "endpoint_error_m": 0.1913,
+          "path_updates": 1,
+          "max_linear_command_m_s": 0.5363,
+          "max_angular_command_rad_s": 0.8,
+          "max_abs_roll_pitch_rad": 0.0377,
+          "min_odom_z_m": 0.2878
+        },
+        {
+          "goal": [
+            -4.0,
+            4.5
+          ],
+          "path_endpoint": [
+            -4.025000024586916,
+            4.474999826401472
+          ],
+          "status": "timeout",
+          "duration_s": 60.056,
+          "start": [
+            -3.8771148975186924,
+            2.5962717242854945
+          ],
+          "final": [
+            -4.171874661877046,
+            4.095218344218624
+          ],
+          "endpoint_error_m": 0.4072,
+          "path_updates": 5,
+          "max_linear_command_m_s": 0.4658,
+          "max_angular_command_rad_s": 0.8,
+          "max_abs_roll_pitch_rad": 0.0509,
+          "min_odom_z_m": 0.278
+        },
+        {
+          "goal": [
+            -1.0,
+            1.0
+          ],
+          "path_endpoint": [
+            -1.0250007510185242,
+            0.9749997742474079
+          ],
+          "status": "timeout",
+          "duration_s": 60.156,
+          "start": [
+            -4.171874661877046,
+            4.095218344218624
+          ],
+          "final": [
+            -1.1232451132239383,
+            1.1747983668498403
+          ],
+          "endpoint_error_m": 0.2226,
+          "path_updates": 1,
+          "max_linear_command_m_s": 0.5498,
+          "max_angular_command_rad_s": 0.8,
+          "max_abs_roll_pitch_rad": 0.0396,
+          "min_odom_z_m": 0.2871
+        }
+      ],
+      "all_reached": false,
+      "max_endpoint_error_m": 0.4072,
+      "max_abs_roll_pitch_rad": 0.0509,
+      "min_odom_z_m": 0.278
+    },
+    "attempt_2": {
+      "goals": [
+        {
+          "goal": [
+            -2.0,
+            1.5
+          ],
+          "path_endpoint": [
+            -2.0250007659196854,
+            1.4749997816979885
+          ],
+          "status": "reached",
+          "duration_s": 29.26,
+          "start": [
+            -1.103005342290111,
+            1.1326648409194549
+          ],
+          "final": [
+            -2.052405884259621,
+            1.2816667862676772
+          ],
+          "endpoint_error_m": 0.1953,
+          "path_updates": 1,
+          "max_linear_command_m_s": 0.3605,
+          "max_angular_command_rad_s": 0.8,
+          "max_abs_roll_pitch_rad": 0.0402,
+          "min_odom_z_m": 0.2873
+        },
+        {
+          "goal": [
+            -4.0,
+            2.5
+          ],
+          "path_endpoint": [
+            -4.025000795722008,
+            2.4749996066093445
+          ],
+          "status": "reached",
+          "duration_s": 18.845,
+          "start": [
+            -2.052405884259621,
+            1.2816667862676772
+          ],
+          "final": [
+            -3.929500924650231,
+            2.343907936107669
+          ],
+          "endpoint_error_m": 0.1622,
+          "path_updates": 1,
+          "max_linear_command_m_s": 0.55,
+          "max_angular_command_rad_s": 0.2,
+          "max_abs_roll_pitch_rad": 0.0338,
+          "min_odom_z_m": 0.2872
+        },
+        {
+          "goal": [
+            -3.0,
+            3.5
+          ],
+          "path_endpoint": [
+            -3.0250007808208466,
+            3.4749996215105057
+          ],
+          "status": "reached",
+          "duration_s": 27.786,
+          "start": [
+            -3.929500924650231,
+            2.343907936107669
+          ],
+          "final": [
+            -3.1840250257948703,
+            3.580272769512102
+          ],
+          "endpoint_error_m": 0.1907,
+          "path_updates": 1,
+          "max_linear_command_m_s": 0.3979,
+          "max_angular_command_rad_s": 0.8,
+          "max_abs_roll_pitch_rad": 0.0489,
+          "min_odom_z_m": 0.2898
+        },
+        {
+          "goal": [
+            -1.0,
+            1.0
+          ],
+          "path_endpoint": [
+            -1.0250007510185242,
+            0.9749995842576027
+          ],
+          "status": "timeout",
+          "duration_s": 90.184,
+          "start": [
+            -3.1840250257948703,
+            3.580272769512102
+          ],
+          "final": [
+            -2.70086175122436,
+            3.217390529080332
+          ],
+          "endpoint_error_m": 2.7994,
+          "path_updates": 1,
+          "max_linear_command_m_s": 0.4256,
+          "max_angular_command_rad_s": 0.8,
+          "max_abs_roll_pitch_rad": 0.0348,
+          "min_odom_z_m": 0.2903
+        }
+      ],
+      "all_reached": false,
+      "max_endpoint_error_m": 2.7994,
+      "max_abs_roll_pitch_rad": 0.0489,
+      "min_odom_z_m": 0.2872
+    },
+    "post_cancel_recovery": {
+      "goals": [
+        {
+          "goal": [
+            -3.0,
+            2.5
+          ],
+          "path_endpoint": [
+            -3.0250007808208466,
+            2.4749996066093445
+          ],
+          "status": "reached",
+          "duration_s": 22.057,
+          "start": [
+            -2.7008617583999777,
+            3.2173905247371115
+          ],
+          "final": [
+            -2.834419550014205,
+            2.416880972446126
+          ],
+          "endpoint_error_m": 0.1992,
+          "path_updates": 1,
+          "max_linear_command_m_s": 0.3841,
+          "max_angular_command_rad_s": 0.8,
+          "max_abs_roll_pitch_rad": 0.0409,
+          "min_odom_z_m": 0.2874
+        }
+      ],
+      "all_reached": true,
+      "max_endpoint_error_m": 0.1992,
+      "max_abs_roll_pitch_rad": 0.0409,
+      "min_odom_z_m": 0.2874
+    },
+    "runtime_audit": {
+      "uncaught_exceptions": 0,
+      "stuck_replans": 4,
+      "obstacle_replans": 1,
+      "safe_no_path_cancellations": 1,
+      "collision_or_flip_detected": false,
+      "maximum_observed_abs_roll_pitch_rad": 0.0509,
+      "minimum_observed_odom_z_m": 0.278
+    },
+    "decision": "functional pass with retained controller limitations",
+    "known_limitations": [
+      "One goal remained about 0.41 m from its endpoint after repeated stuck replans.",
+      "One return route was safely cancelled after a moving-obstacle replan found no path.",
+      "A new short goal after cancellation reached successfully, confirming recovery."
+    ]
+  }
+}

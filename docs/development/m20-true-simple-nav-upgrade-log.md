@@ -1763,3 +1763,37 @@ cost-first behavior unless they explicitly opt in. The true simple-nav
 - `docs/development/issues/m20-goal-pose-final-orientation-contract.md`
 - `dimos/mapping/costmapper.py`
 - `dimos/navigation/replanning_a_star/`
+
+## P0 Long-Path Smoothing Performance Closure (2026-07-17)
+
+The allocation and grid-index optimization plan is implemented and validated.
+No collision spacing, iteration limit, path scope, unknown policy, clearance
+threshold, alpha policy, or public OccupancyGrid API changed.
+
+The final shadow-enabled offline P50/P95 matrix is:
+
+| Length | Before | After | P50 reduction |
+|---:|---:|---:|---:|
+| 2 m | 47.0 / 48.8 ms | 10.9 / 13.0 ms | 76.7% |
+| 5 m | 109.6 / 112.9 ms | 19.5 / 21.3 ms | 82.2% |
+| 10 m | 234.7 / 241.8 ms | 35.4 / 36.4 ms | 84.9% |
+| 20 m | 479.1 / 492.0 ms | 66.8 / 68.4 ms | 86.1% |
+| 40 m | 953.4 / 985.9 ms | 128.8 / 132.8 ms | 86.5% |
+
+The implementation keeps candidate geometry as arrays, constructs one final
+Path, uses direct scalar grid indexing in internal hot paths, and removes
+temporary arrays from the sequential smoothing loop. Five deterministic cases
+and two retained real snapshots have exact (`0.0`) path, quaternion, candidate
+report, and alpha equality against Phase 0.
+
+MuJoCo fixed-robot A/B reduced post-A* P95 from 203.9 ms to 29.3 ms and
+end-to-end P95 from 314.1 ms to 137.6 ms. The complete fixed matrices covered
+all required distance bands with zero shadow mismatch, policy violation,
+runtime exception, or meaningful odometry drift. Moving tests did not flip or
+collide and recovered after a safe no-path cancellation. They still exposed
+the existing near-goal stuck/replan limitation, which remains a controller task
+and was not hidden inside this performance change.
+
+Full phase measurements and the MuJoCo summary are in
+`docs/development/m20-path-smoothing-performance-execution-plan.md` and
+`docs/development/validation/path-smoothing-performance/2026-07-17/`.
