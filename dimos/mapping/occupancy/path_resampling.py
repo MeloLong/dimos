@@ -33,6 +33,53 @@ from dimos.utils.transform_utils import euler_to_quaternion
 
 logger = setup_logger()
 
+_PATH_SMOOTHING_TIMING_FIELDS = (
+    "raw_validation_ms",
+    "reference_costs_ms",
+    "smoothing_loop_ms",
+    "distance_transform_ms",
+    "raw_resample_metrics_ms",
+    "candidate_1_0_ms",
+    "candidate_0_5_ms",
+    "candidate_0_25_ms",
+    "candidate_0_125_ms",
+    "physical_policy_ms",
+    "final_path_message_ms",
+    "optimizer_total_ms",
+    "path_publish_ms",
+    "local_planner_handoff_ms",
+)
+
+
+def _initialize_smoothing_timing(
+    timing: dict[str, float | int] | None,
+    path: Path,
+    costmap: OccupancyGrid,
+) -> None:
+    if timing is None:
+        return
+    timing.clear()
+    timing.update({field: 0.0 for field in _PATH_SMOOTHING_TIMING_FIELDS})
+    timing["raw_path_points"] = len(path.poses)
+    timing["raw_path_length_m"] = sum(
+        math.hypot(following.x - current.x, following.y - current.y)
+        for current, following in pairwise(path.poses)
+    )
+    timing["costmap_width"] = costmap.width
+    timing["costmap_height"] = costmap.height
+    timing["smoothing_iterations"] = 0
+
+
+def _record_elapsed(
+    timing: dict[str, float | int] | None,
+    field: str,
+    started: float,
+) -> float:
+    elapsed_ms = (perf_counter() - started) * 1000
+    if timing is not None:
+        timing[field] = elapsed_ms
+    return elapsed_ms
+
 
 @dataclass(frozen=True)
 class ConstrainedPathSmoothingConfig:
@@ -264,6 +311,7 @@ def _log_raw_only_validator_shadow(
     config: ConstrainedPathSmoothingConfig,
     *,
     reason: str,
+    timing: dict[str, float | int] | None = None,
 ) -> None:
     if not _validator_metrics_enabled(config):
         return
@@ -273,6 +321,8 @@ def _log_raw_only_validator_shadow(
     clearance_started = perf_counter()
     clearance_grid = _lethal_clearance_grid(costmap)
     clearance_transform_ms = (perf_counter() - clearance_started) * 1000
+    if timing is not None:
+        timing["distance_transform_ms"] = clearance_transform_ms
     metrics_started = perf_counter()
     raw_metrics = _path_physical_metrics(
         points,
@@ -281,6 +331,8 @@ def _log_raw_only_validator_shadow(
         clearance_grid,
     )
     candidate_evaluation_ms = (perf_counter() - metrics_started) * 1000
+    if timing is not None:
+        timing["raw_resample_metrics_ms"] = (perf_counter() - started) * 1000
     raw_valid = raw_metrics.validation_reason is None
     physical_enabled = (
         config.physical_validator_shadow_enabled or config.physical_validator_authoritative_enabled
@@ -511,13 +563,17 @@ def _select_backtracked_path(
     goal_pose: Pose,
     costmap: OccupancyGrid,
     config: ConstrainedPathSmoothingConfig,
+    timing: dict[str, float | int] | None = None,
 ) -> Path:
     validator_started = perf_counter()
     physical_validator_enabled = (
         config.physical_validator_shadow_enabled or config.physical_validator_authoritative_enabled
     )
     metrics_enabled = config.validator_shadow_enabled or physical_validator_enabled
+    raw_metrics_started = perf_counter()
+    raw_message_started = perf_counter()
     raw_resampled = _resample_xy(source_path, original, goal_pose, config.spacing_m)
+    raw_message_ms = (perf_counter() - raw_message_started) * 1000
     raw_resampled_points = np.array(
         [[pose.x, pose.y] for pose in raw_resampled.poses],
         dtype=np.float64,
@@ -525,6 +581,8 @@ def _select_backtracked_path(
     clearance_started = perf_counter()
     clearance_grid = _lethal_clearance_grid(costmap) if metrics_enabled else None
     clearance_transform_ms = (perf_counter() - clearance_started) * 1000
+    if timing is not None:
+        timing["distance_transform_ms"] = clearance_transform_ms
     candidate_evaluation_ms = 0.0
     if metrics_enabled:
         evaluation_started = perf_counter()
@@ -544,7 +602,10 @@ def _select_backtracked_path(
             costmap,
             config.collision_sample_spacing_m,
         )
+    _record_elapsed(timing, "raw_resample_metrics_ms", raw_metrics_started)
     if baseline_cost is None:
+        if timing is not None:
+            timing["final_path_message_ms"] = raw_message_ms
         if raw_metrics is not None:
             shadow_report = {
                 "legacy_selected_alpha": None,
@@ -591,10 +652,16 @@ def _select_backtracked_path(
     shadow_candidates: list[dict[str, object]] = []
     candidate_metrics_by_alpha: list[tuple[float, PathPhysicalMetrics]] = []
     candidate_paths_by_alpha: dict[float, Path] = {}
+    candidate_message_ms_by_alpha: dict[float, float] = {}
 
     for fraction in fractions:
+        candidate_started = perf_counter()
         blended = original + fraction * full_offset
+        candidate_message_started = perf_counter()
         candidate_path = _resample_xy(source_path, blended, goal_pose, config.spacing_m)
+        candidate_message_ms_by_alpha[fraction] = (
+            perf_counter() - candidate_message_started
+        ) * 1000
         candidate_points = np.array(
             [[pose.x, pose.y] for pose in candidate_path.poses],
             dtype=np.float64,
@@ -633,6 +700,11 @@ def _select_backtracked_path(
                 }
             )
 
+        if timing is not None:
+            timing[f"candidate_{str(fraction).replace('.', '_')}_ms"] = (
+                perf_counter() - candidate_started
+            ) * 1000
+
         if rejection_reason is None:
             assert candidate_cost is not None
             if selected_path is None:
@@ -669,12 +741,14 @@ def _select_backtracked_path(
 
     physical_selected_alpha: float | None = None
     if raw_metrics is not None and physical_validator_enabled:
+        physical_policy_started = perf_counter()
         physical_selected_alpha, physical_decisions = select_physical_path_candidate(
             raw_metrics,
             candidate_metrics_by_alpha,
             max_clearance_loss_m=config.physical_validator_max_clearance_loss_m,
             max_unknown_length_increase_m=(config.physical_validator_max_unknown_length_increase_m),
         )
+        _record_elapsed(timing, "physical_policy_ms", physical_policy_started)
         for candidate, decision in zip(shadow_candidates, physical_decisions, strict=True):
             candidate.update(
                 {
@@ -724,10 +798,16 @@ def _select_backtracked_path(
 
     if config.physical_validator_authoritative_enabled:
         if physical_selected_alpha is None:
+            if timing is not None:
+                timing["final_path_message_ms"] = raw_message_ms
             return raw_resampled
+        if timing is not None:
+            timing["final_path_message_ms"] = candidate_message_ms_by_alpha[physical_selected_alpha]
         return candidate_paths_by_alpha[physical_selected_alpha]
 
     if selected_path is not None:
+        if timing is not None and selected_alpha is not None:
+            timing["final_path_message_ms"] = candidate_message_ms_by_alpha[selected_alpha]
         return selected_path
 
     logger.warning(
@@ -737,6 +817,8 @@ def _select_backtracked_path(
         max_allowed_cost=round(max_allowed_cost, 3),
         raw_points=len(original),
     )
+    if timing is not None:
+        timing["final_path_message_ms"] = raw_message_ms
     return raw_resampled
 
 
@@ -745,101 +827,127 @@ def constrained_smooth_resample_path(
     goal_pose: Pose,
     costmap: OccupancyGrid,
     config: ConstrainedPathSmoothingConfig,
+    timing: dict[str, float | int] | None = None,
 ) -> Path:
     """Locally smooth a grid path while preserving its costmap corridor."""
-    raw_resampled = simple_resample_path(path, goal_pose, config.spacing_m)
-    if len(path) < 3 or config.max_iterations == 0 or config.max_deviation_m == 0:
-        _log_raw_only_validator_shadow(
-            raw_resampled,
-            costmap,
-            config,
-            reason="smoothing_not_applicable",
-        )
-        return raw_resampled
+    optimizer_started = perf_counter()
+    _initialize_smoothing_timing(timing, path, costmap)
+    try:
+        raw_message_started = perf_counter()
+        raw_resampled = simple_resample_path(path, goal_pose, config.spacing_m)
+        raw_message_ms = (perf_counter() - raw_message_started) * 1000
+        if len(path) < 3 or config.max_iterations == 0 or config.max_deviation_m == 0:
+            if timing is not None:
+                timing["final_path_message_ms"] = raw_message_ms
+            _log_raw_only_validator_shadow(
+                raw_resampled,
+                costmap,
+                config,
+                reason="smoothing_not_applicable",
+                timing=timing,
+            )
+            return raw_resampled
 
-    original = np.array([[pose.x, pose.y] for pose in path.poses], dtype=np.float64)
-    duplicate = np.linalg.norm(np.diff(original, axis=0), axis=1) <= 1e-10
-    original = original[np.concatenate(([True], ~duplicate))]
-    if len(original) < 3:
-        _log_raw_only_validator_shadow(
-            raw_resampled,
-            costmap,
-            config,
-            reason="duplicate_points_removed",
-        )
-        return raw_resampled
+        original = np.array([[pose.x, pose.y] for pose in path.poses], dtype=np.float64)
+        duplicate = np.linalg.norm(np.diff(original, axis=0), axis=1) <= 1e-10
+        original = original[np.concatenate(([True], ~duplicate))]
+        if len(original) < 3:
+            if timing is not None:
+                timing["final_path_message_ms"] = raw_message_ms
+            _log_raw_only_validator_shadow(
+                raw_resampled,
+                costmap,
+                config,
+                reason="duplicate_points_removed",
+                timing=timing,
+            )
+            return raw_resampled
 
-    raw_cost, raw_failure_reason = _path_cost_validation(
-        original,
-        costmap,
-        config.collision_sample_spacing_m,
-    )
-    if raw_cost is None:
-        _log_raw_only_validator_shadow(
-            raw_resampled,
-            costmap,
-            config,
-            reason="raw_astar_validation_failed",
-        )
-        logger.warning(
-            "Raw A* path failed constrained-smoothing validation; skipping smoothing.",
-            reason=raw_failure_reason,
-            raw_points=len(original),
-        )
-        return raw_resampled
-
-    smoothed = original.copy()
-    reference_costs = [
-        _effective_path_cost(
-            original[index - 1 : index + 2],
+        raw_validation_started = perf_counter()
+        raw_cost, raw_failure_reason = _path_cost_validation(
+            original,
             costmap,
             config.collision_sample_spacing_m,
         )
-        for index in range(1, len(original) - 1)
-    ]
-    for _ in range(config.max_iterations):
-        max_change = 0.0
-        for index in range(1, len(smoothed) - 1):
-            current = smoothed[index]
-            candidate = current + config.data_weight * (original[index] - current)
-            candidate += config.smoothness_weight * (
-                smoothed[index - 1] + smoothed[index + 1] - 2 * current
+        _record_elapsed(timing, "raw_validation_ms", raw_validation_started)
+        if raw_cost is None:
+            if timing is not None:
+                timing["final_path_message_ms"] = raw_message_ms
+            _log_raw_only_validator_shadow(
+                raw_resampled,
+                costmap,
+                config,
+                reason="raw_astar_validation_failed",
+                timing=timing,
             )
+            logger.warning(
+                "Raw A* path failed constrained-smoothing validation; skipping smoothing.",
+                reason=raw_failure_reason,
+                raw_points=len(original),
+            )
+            return raw_resampled
 
-            offset = candidate - original[index]
-            offset_length = float(np.linalg.norm(offset))
-            if offset_length > config.max_deviation_m:
-                candidate = original[index] + offset * (config.max_deviation_m / offset_length)
-
-            candidate_points = np.vstack((smoothed[index - 1], candidate, smoothed[index + 1]))
-            reference_cost = reference_costs[index - 1]
-            candidate_cost = _effective_path_cost(
-                candidate_points,
+        smoothed = original.copy()
+        reference_costs_started = perf_counter()
+        reference_costs = [
+            _effective_path_cost(
+                original[index - 1 : index + 2],
                 costmap,
                 config.collision_sample_spacing_m,
             )
-            if (
-                reference_cost is None
-                or candidate_cost is None
-                or candidate_cost > reference_cost + config.max_cost_increase
-            ):
-                continue
+            for index in range(1, len(original) - 1)
+        ]
+        _record_elapsed(timing, "reference_costs_ms", reference_costs_started)
+        smoothing_started = perf_counter()
+        for iteration in range(config.max_iterations):
+            if timing is not None:
+                timing["smoothing_iterations"] = iteration + 1
+            max_change = 0.0
+            for index in range(1, len(smoothed) - 1):
+                current = smoothed[index]
+                candidate = current + config.data_weight * (original[index] - current)
+                candidate += config.smoothness_weight * (
+                    smoothed[index - 1] + smoothed[index + 1] - 2 * current
+                )
 
-            change = float(np.linalg.norm(candidate - current))
-            smoothed[index] = candidate
-            max_change = max(max_change, change)
+                offset = candidate - original[index]
+                offset_length = float(np.linalg.norm(offset))
+                if offset_length > config.max_deviation_m:
+                    candidate = original[index] + offset * (config.max_deviation_m / offset_length)
 
-        if max_change < 1e-4:
-            break
+                candidate_points = np.vstack((smoothed[index - 1], candidate, smoothed[index + 1]))
+                reference_cost = reference_costs[index - 1]
+                candidate_cost = _effective_path_cost(
+                    candidate_points,
+                    costmap,
+                    config.collision_sample_spacing_m,
+                )
+                if (
+                    reference_cost is None
+                    or candidate_cost is None
+                    or candidate_cost > reference_cost + config.max_cost_increase
+                ):
+                    continue
 
-    return _select_backtracked_path(
-        path,
-        original,
-        smoothed,
-        goal_pose,
-        costmap,
-        config,
-    )
+                change = float(np.linalg.norm(candidate - current))
+                smoothed[index] = candidate
+                max_change = max(max_change, change)
+
+            if max_change < 1e-4:
+                break
+        _record_elapsed(timing, "smoothing_loop_ms", smoothing_started)
+
+        return _select_backtracked_path(
+            path,
+            original,
+            smoothed,
+            goal_pose,
+            costmap,
+            config,
+            timing,
+        )
+    finally:
+        _record_elapsed(timing, "optimizer_total_ms", optimizer_started)
 
 
 def smooth_resample_path(

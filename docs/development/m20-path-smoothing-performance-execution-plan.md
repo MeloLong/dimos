@@ -215,6 +215,65 @@ Phase 0 passes when:
 - the baseline matrix can be reproduced twice within 10% P95 variation;
 - the generated JSON and CSV validate successfully.
 
+### 6.4 Phase 0 Result (2026-07-17)
+
+**Status: passed.** Commit scope: structured timing, deterministic benchmark,
+and non-LFS timing coverage only. Planner geometry and safety decisions were
+not changed.
+
+The committed benchmark fixture uses a fixed `220 x 1000` grid at `0.05 m`, a
+fixed seed (`20260717`), the production spacing values, and both shadows. It is
+deliberately independent of private LFS data. The baseline is higher than the
+earlier exploratory profile because this frozen fixture has a larger fixed
+costmap and deterministic mixed costs; all later speedup percentages use this
+same fixture.
+
+| Length | Raw points | Run A P50/P95 | Run B P50/P95 | P95 variation |
+|---:|---:|---:|---:|---:|
+| 2 m | 38 | 46.9 / 47.6 ms | 47.1 / 50.0 ms | 4.92% |
+| 5 m | 93 | 109.2 / 112.9 ms | 110.0 / 112.9 ms | 0.04% |
+| 10 m | 186 | 234.1 / 245.0 ms | 235.2 / 238.6 ms | 2.67% |
+| 20 m | 372 | 480.9 / 494.3 ms | 477.3 / 489.6 ms | 0.97% |
+| 40 m | 743 | 957.8 / 972.7 ms | 948.9 / 999.2 ms | 2.72% |
+
+The four sequential runs showed VM frequency drift at 40 m, so timing overhead
+was also measured in one process by alternating the uninstrumented baseline
+and instrumented implementation on every repetition. This removes test-order
+bias and produced the following P95 overhead:
+
+| Length | Timing overhead |
+|---:|---:|
+| 2 m | -1.66% |
+| 5 m | +1.18% |
+| 10 m | -0.06% |
+| 20 m | +0.95% |
+| 40 m | +0.34% |
+
+All values are below the 3% gate. Negative values are normal scheduling noise,
+not a claimed speedup. At 20 m, Run A P50 decomposed into 304.4 ms smoothing,
+35.5 ms raw resample/metrics, four 30.4-30.7 ms candidate evaluations, 5.4 ms
+reference costs, 4.9 ms distance transform, and 1.9 ms raw validation. Physical
+policy selection remained 0.01 ms.
+
+Verification:
+
+- all 19 required fields are emitted in one `Path smoothing performance`
+  record per constrained plan, including path publish and LocalPlanner handoff;
+- the new deterministic timing test passed;
+- 24 non-LFS smoothing tests passed;
+- two historical image tests could not run because the private
+  `occupancy_simple.npy` LFS object requires unavailable credentials;
+- JSON and CSV from both formal runs parsed successfully;
+- the next permitted step is Phase 1 array-only candidate geometry.
+
+Artifacts:
+
+- `docs/development/validation/path-smoothing-performance/2026-07-17/phase0-instrumented-a.*`
+- `docs/development/validation/path-smoothing-performance/2026-07-17/phase0-instrumented-b.*`
+- `docs/development/validation/path-smoothing-performance/2026-07-17/phase0-baseline-a.*`
+- `docs/development/validation/path-smoothing-performance/2026-07-17/phase0-baseline-b.*`
+- `docs/development/validation/path-smoothing-performance/2026-07-17/phase0-interleaved-overhead.json`
+
 ## 7. Phase 1: Keep Candidate Geometry As Arrays
 
 ### 7.1 Implementation
@@ -586,8 +645,8 @@ The optimization is complete only when the repository contains:
 
 ## 17. Execution Checklist
 
-- [ ] Phase 0 timing fields implemented and baseline frozen.
-- [ ] Benchmark runner and deterministic fixtures added.
+- [x] Phase 0 timing fields implemented and baseline frozen.
+- [x] Benchmark runner and deterministic fixtures added.
 - [ ] Phase 1 array-only candidate pipeline implemented.
 - [ ] Duplicate eager resampling removed.
 - [ ] Phase 1 equivalence and performance gate passed.

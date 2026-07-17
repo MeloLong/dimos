@@ -1,0 +1,125 @@
+{
+  "protocol": {
+    "lengths_m": [
+      2.0,
+      5.0,
+      10.0,
+      20.0,
+      40.0
+    ],
+    "warmups": 5,
+    "repetitions": 30,
+    "seed": 20260717,
+    "costmap_shape": [
+      220,
+      1000
+    ],
+    "costmap_resolution_m": 0.05,
+    "resample_spacing_m": 0.1,
+    "collision_sample_spacing_m": 0.05,
+    "timing_supported": false,
+    "implementation": "/home/markus/work/dimos_m20/dimos/mapping/occupancy/path_resampling.py"
+  },
+  "cases": [
+    {
+      "length_m": 2.0,
+      "raw_points": 38,
+      "output_points": [
+        22
+      ],
+      "shadows_enabled": true,
+      "wall_ms": {
+        "p50": 45.968337974045426,
+        "p95": 48.50840628205333,
+        "max": 50.03122496418655
+      },
+      "cpu_ms": {
+        "p50": 45.961750500000065,
+        "p95": 48.493955799999796,
+        "max": 50.0142079999999
+      },
+      "peak_rss_kib": 121788,
+      "phases_ms": {}
+    },
+    {
+      "length_m": 5.0,
+      "raw_points": 93,
+      "output_points": [
+        52
+      ],
+      "shadows_enabled": true,
+      "wall_ms": {
+        "p50": 109.53326799790375,
+        "p95": 118.85037359897979,
+        "max": 121.08600896317512
+      },
+      "cpu_ms": {
+        "p50": 109.52814550000012,
+        "p95": 118.83512835000035,
+        "max": 121.06874899999997
+      },
+      "peak_rss_kib": 122080,
+      "phases_ms": {}
+    },
+    {
+      "length_m": 10.0,
+      "raw_points": 186,
+      "output_points": [
+        102
+      ],
+      "shadows_enabled": true,
+      "wall_ms": {
+        "p50": 227.98018550383858,
+        "p95": 239.46887210768182,
+        "max": 255.7740969932638
+      },
+      "cpu_ms": {
+        "p50": 227.96785350000005,
+        "p95": 239.44453720000007,
+        "max": 255.7267490000008
+      },
+      "peak_rss_kib": 122696,
+      "phases_ms": {}
+    },
+    {
+      "length_m": 20.0,
+      "raw_points": 372,
+      "output_points": [
+        202
+      ],
+      "shadows_enabled": true,
+      "wall_ms": {
+        "p50": 462.7975780167617,
+        "p95": 479.53256906184833,
+        "max": 487.56595997838303
+      },
+      "cpu_ms": {
+        "p50": 462.77768550000076,
+        "p95": 479.4891085500012,
+        "max": 487.5575390000009
+      },
+      "peak_rss_kib": 123348,
+      "phases_ms": {}
+    },
+    {
+      "length_m": 40.0,
+      "raw_points": 743,
+      "output_points": [
+        402
+      ],
+      "shadows_enabled": true,
+      "wall_ms": {
+        "p50": 900.4212924919557,
+        "p95": 915.2382194413804,
+        "max": 920.0312229804695
+      },
+      "cpu_ms": {
+        "p50": 900.3644350000037,
+        "p95": 915.214876699999,
+        "max": 919.9789950000011
+      },
+      "peak_rss_kib": 124720,
+      "phases_ms": {}
+    }
+  ]
+}

@@ -84,6 +84,49 @@ def test_zero_iterations_preserves_raw_geometry() -> None:
     assert result.poses[-1].position.distance(raw.poses[-1].position) < 1e-9
 
 
+def test_constrained_smoothing_records_complete_phase_timing() -> None:
+    raw = _path([(0.2 + i * 0.1, 1.0 + (0.04 if i % 2 else -0.04)) for i in range(25)])
+    timing: dict[str, float | int] = {}
+
+    constrained_smooth_resample_path(
+        raw,
+        Pose(position=raw.poses[-1].position),
+        _costmap(),
+        ConstrainedPathSmoothingConfig(
+            spacing_m=0.05,
+            validator_shadow_enabled=True,
+            physical_validator_shadow_enabled=True,
+        ),
+        timing,
+    )
+
+    assert timing.keys() == {
+        "raw_path_points",
+        "raw_path_length_m",
+        "costmap_width",
+        "costmap_height",
+        "raw_validation_ms",
+        "reference_costs_ms",
+        "smoothing_loop_ms",
+        "smoothing_iterations",
+        "distance_transform_ms",
+        "raw_resample_metrics_ms",
+        "candidate_1_0_ms",
+        "candidate_0_5_ms",
+        "candidate_0_25_ms",
+        "candidate_0_125_ms",
+        "physical_policy_ms",
+        "final_path_message_ms",
+        "optimizer_total_ms",
+        "path_publish_ms",
+        "local_planner_handoff_ms",
+    }
+    assert timing["raw_path_points"] == len(raw.poses)
+    assert timing["raw_path_length_m"] > 0
+    assert timing["smoothing_iterations"] > 0
+    assert timing["optimizer_total_ms"] > 0
+
+
 def test_path_cost_validation_reports_rejection_reason() -> None:
     costmap = _costmap()
     costmap.grid[10, 10] = CostValues.OCCUPIED

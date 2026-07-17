@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 import math
 from threading import Event, RLock, Thread, current_thread
 import time
@@ -450,11 +451,13 @@ class GlobalPlanner(Resource):
         if self._publish_raw_path:
             self.raw_path.on_next(path)
         if self._constrained_path_smoothing_enabled:
+            smoothing_timing: dict[str, float | int] = {}
             resampled_path = constrained_smooth_resample_path(
                 path,
                 current_goal,
                 costmap,
                 self._path_smoothing_config,
+                smoothing_timing,
             )
         else:
             resampled_path = smooth_resample_path(
@@ -463,9 +466,21 @@ class GlobalPlanner(Resource):
                 self._path_smoothing_config.spacing_m,
             )
 
+        path_publish_started = time.perf_counter()
         self.path.on_next(resampled_path)
+        path_publish_ms = (time.perf_counter() - path_publish_started) * 1000
 
+        handoff_started = time.perf_counter()
         self._local_planner.start_planning(resampled_path)
+        if self._constrained_path_smoothing_enabled:
+            smoothing_timing["path_publish_ms"] = path_publish_ms
+            smoothing_timing["local_planner_handoff_ms"] = (
+                time.perf_counter() - handoff_started
+            ) * 1000
+            logger.info(
+                "Path smoothing performance.",
+                smoothing_timing=json.dumps(smoothing_timing, separators=(",", ":")),
+            )
 
     def _find_wide_path(
         self, goal: Vector3, robot_pos: Vector3
