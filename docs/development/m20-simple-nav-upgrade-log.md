@@ -1,4 +1,4 @@
-# M20 True Simple-Nav Upgrade Log
+# M20 Simple Nav Upgrade Log
 
 - Status: Active engineering record
 - Baseline: `wd/m20-mujoco-simulation`, commit `5ecbb8e1`
