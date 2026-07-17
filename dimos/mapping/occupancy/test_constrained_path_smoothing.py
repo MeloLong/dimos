@@ -12,6 +12,7 @@ from dimos.mapping.occupancy.path_resampling import (
     _resample_xy,
     _resample_xy_array,
     _select_backtracked_path,
+    _world_to_grid_indices,
     constrained_smooth_resample_path,
     simple_resample_path,
 )
@@ -35,6 +36,32 @@ def _total_turn(path: Path) -> float:
 
 def _costmap() -> OccupancyGrid:
     return OccupancyGrid(np.zeros((80, 80), dtype=np.int8), resolution=0.05)
+
+
+def _legacy_path_cost_validation(
+    points: np.ndarray,
+    costmap: OccupancyGrid,
+    sample_spacing_m: float,
+) -> tuple[float | None, str | None]:
+    values: list[float] = []
+    segments = [(points[0], points[0])] if len(points) == 1 else list(pairwise(points))
+    for segment_index, (start, end) in enumerate(segments):
+        length = float(np.linalg.norm(end - start))
+        sample_count = max(1, math.ceil(length / sample_spacing_m))
+        first_sample = 0 if segment_index == 0 else 1
+        for sample_index in range(first_sample, sample_count + 1):
+            ratio = sample_index / sample_count
+            point = start + ratio * (end - start)
+            grid_point = costmap.world_to_grid((float(point[0]), float(point[1]), 0.0))
+            grid_x = math.floor(grid_point.x)
+            grid_y = math.floor(grid_point.y)
+            if not (0 <= grid_x < costmap.width and 0 <= grid_y < costmap.height):
+                return None, "out_of_bounds"
+            value = int(costmap.grid[grid_y, grid_x])
+            if value >= CostValues.OCCUPIED:
+                return None, "lethal_cell"
+            values.append(80.0 if value == CostValues.UNKNOWN else max(0.0, float(value)))
+    return (float(np.mean(values)) if values else 0.0), None
 
 
 def _assert_continuously_traversable(path: Path, costmap: OccupancyGrid) -> None:
@@ -228,6 +255,57 @@ def test_path_cost_validation_reports_rejection_reason() -> None:
     assert lethal_reason == "lethal_cell"
     assert outside_cost is None
     assert outside_reason == "out_of_bounds"
+
+
+@pytest.mark.parametrize("origin_xy", [(0.0, 0.0), (-3.7, 2.4), (5.2, -8.1)])
+def test_direct_grid_indices_match_public_conversion_at_boundaries(origin_xy) -> None:
+    costmap = OccupancyGrid(
+        grid=np.zeros((8, 9), dtype=np.int8),
+        resolution=0.1,
+        origin=Pose(position=[origin_xy[0], origin_xy[1], 0.0]),
+    )
+    offsets = [
+        -0.1,
+        np.nextafter(0.0, -1.0),
+        0.0,
+        np.nextafter(0.1, 0.0),
+        0.1,
+        np.nextafter(0.1, 1.0),
+        0.8,
+        0.9,
+    ]
+    for x_offset in offsets:
+        for y_offset in offsets:
+            x = origin_xy[0] + x_offset
+            y = origin_xy[1] + y_offset
+            reference = costmap.world_to_grid((x, y, 0.0))
+            assert _world_to_grid_indices(costmap, x, y) == (
+                math.floor(reference.x),
+                math.floor(reference.y),
+            )
+
+
+def test_direct_path_cost_matches_legacy_on_seeded_grids_and_paths() -> None:
+    rng = np.random.default_rng(20260717)
+    for origin_xy in ((0.0, 0.0), (-2.35, 1.15), (4.2, -3.8)):
+        grid = rng.integers(-1, 100, size=(30, 40), dtype=np.int8)
+        grid[rng.random(grid.shape) < 0.08] = CostValues.OCCUPIED
+        costmap = OccupancyGrid(
+            grid=grid,
+            resolution=0.1,
+            origin=Pose(position=[origin_xy[0], origin_xy[1], 0.0]),
+        )
+        for point_count in (1, 2, 3, 12):
+            for _ in range(25):
+                points = rng.uniform((-0.15, -0.15), (4.05, 3.05), size=(point_count, 2))
+                points += np.asarray(origin_xy)
+                expected = _legacy_path_cost_validation(points, costmap, 0.05)
+                actual = _path_cost_validation(points, costmap, 0.05)
+                assert actual[1] == expected[1]
+                if expected[0] is None:
+                    assert actual[0] is None
+                else:
+                    assert actual[0] == pytest.approx(expected[0], abs=1e-12)
 
 
 def test_backtracking_selects_largest_valid_fraction() -> None:

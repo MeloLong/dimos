@@ -415,6 +415,58 @@ Phase 2 passes when:
 - all offline length P50/P95 gates in Section 3 pass;
 - output geometry and alpha decisions remain equivalent.
 
+### 8.3 Phase 2 Result (2026-07-17)
+
+**Status: implementation and relative-improvement gates passed; absolute
+offline matrix requires Phase 3.** Direct indexing is limited to the measured
+internal hot paths; public `OccupancyGrid.world_to_grid()` is unchanged.
+
+The first helper-only implementation improved the 370-local-triple benchmark
+by just `1.35x` because it still allocated a NumPy point per sample and a list
+for `np.mean`. The accepted implementation retains scalar XY values, caches
+grid metadata, accumulates effective cost directly, and preserves all original
+sample-count, shared-endpoint, floor, bounds, unknown, and lethal rules.
+
+Microbenchmark (`370` triples, `50` alternating repetitions):
+
+| Metric | Legacy | Direct | Speedup |
+|---|---:|---:|---:|
+| P50 | 5.151 ms | 0.771 ms | 6.68x |
+| P95 | 5.729 ms | 0.821 ms | 6.97x |
+
+Shadow-enabled formal matrix:
+
+| Length | P50 | P95 | P50 reduction vs Phase 0 | Absolute gate |
+|---:|---:|---:|---:|---|
+| 2 m | 17.9 ms | 19.8 ms | 61.9% | pass |
+| 5 m | 35.2 ms | 37.6 ms | 67.9% | fail P50 by 0.2 ms |
+| 10 m | 73.3 ms | 78.7 ms | 68.7% | fail |
+| 20 m | 144.5 ms | 148.4 ms | 69.8% | fail |
+| 40 m | 285.6 ms | 297.9 ms | 70.0% | fail |
+
+The relative `>=60%` objective is met for every length and all behavior checks
+pass, but the frozen fixture uses more smoothing iterations than the earlier
+exploratory profile on which the absolute gates were based. The gates are not
+changed or waived. At 20 m, `117.4 ms` of `144.5 ms` remains in the sequential
+smoothing loop, so optional Phase 3 is required before final offline
+acceptance.
+
+Equivalence evidence:
+
+- seeded grids and paths across positive and negative map origins match legacy
+  mean cost within `1e-12` and have identical failure reasons;
+- nextafter samples immediately around cell boundaries match public conversion;
+- all 5 deterministic lengths and 2 retained real snapshots preserve exact
+  path geometry, quaternions, physical metrics, candidate reports, and alpha;
+- no public API or safety/configuration threshold changed.
+
+Artifacts:
+
+- `docs/development/validation/path-smoothing-performance/2026-07-17/phase2-direct-grid.json`
+- `docs/development/validation/path-smoothing-performance/2026-07-17/phase2-direct-grid.csv`
+- `docs/development/validation/path-smoothing-performance/2026-07-17/phase2-equivalence.json`
+- `docs/development/validation/path-smoothing-performance/2026-07-17/phase2-grid-microbenchmark.json`
+
 ## 9. Phase 3: Optional Residual Optimization
 
 Run this phase only if Phase 2 does not meet the full target.
@@ -695,8 +747,8 @@ The optimization is complete only when the repository contains:
 - [x] Phase 1 array-only candidate pipeline implemented.
 - [x] Duplicate eager resampling removed.
 - [ ] Phase 1 equivalence and performance gate passed.
-- [ ] Phase 2 direct grid-index path implemented.
-- [ ] Randomized cost and boundary equivalence passed.
+- [x] Phase 2 direct grid-index path implemented.
+- [x] Randomized cost and boundary equivalence passed.
 - [ ] Offline 2/5/10/20/40 m P50/P95 gates passed.
 - [ ] Optional Phase 3 decision recorded.
 - [ ] Fixed-robot MuJoCo 100-plan gate passed.

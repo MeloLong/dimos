@@ -194,6 +194,13 @@ def _lethal_clearance_grid(costmap: OccupancyGrid) -> np.ndarray | None:
     return distance_transform_edt(~lethal) * costmap.resolution
 
 
+def _world_to_grid_indices(costmap: OccupancyGrid, x: float, y: float) -> tuple[int, int]:
+    return (
+        math.floor((x - costmap.origin.position.x) / costmap.resolution),
+        math.floor((y - costmap.origin.position.y) / costmap.resolution),
+    )
+
+
 def _sample_path_geometry(
     points: np.ndarray,
     sample_spacing_m: float,
@@ -253,9 +260,7 @@ def _path_physical_metrics(
     )
     clearances: list[float] = []
     for point in clearance_samples:
-        grid_point = costmap.world_to_grid((float(point[0]), float(point[1]), 0.0))
-        grid_x = math.floor(grid_point.x)
-        grid_y = math.floor(grid_point.y)
+        grid_x, grid_y = _world_to_grid_indices(costmap, float(point[0]), float(point[1]))
         if not (0 <= grid_x < costmap.width and 0 <= grid_y < costmap.height):
             clearances.append(0.0)
         elif clearance_grid is not None:
@@ -263,9 +268,7 @@ def _path_physical_metrics(
 
     unknown_length = 0.0
     for point, represented_length in zip(midpoint_samples, midpoint_lengths, strict=True):
-        grid_point = costmap.world_to_grid((float(point[0]), float(point[1]), 0.0))
-        grid_x = math.floor(grid_point.x)
-        grid_y = math.floor(grid_point.y)
+        grid_x, grid_y = _world_to_grid_indices(costmap, float(point[0]), float(point[1]))
         if (
             0 <= grid_x < costmap.width
             and 0 <= grid_y < costmap.height
@@ -487,38 +490,49 @@ def _path_cost_validation(
     sample_spacing_m: float,
 ) -> tuple[float | None, str | None]:
     """Return mean traversable cost and a failure reason when invalid."""
+    origin_x = costmap.origin.position.x
+    origin_y = costmap.origin.position.y
+    resolution = costmap.resolution
+    width = costmap.width
+    height = costmap.height
+    grid = costmap.grid
     if len(points) == 1:
-        grid_point = costmap.world_to_grid((float(points[0, 0]), float(points[0, 1]), 0.0))
-        grid_x = math.floor(grid_point.x)
-        grid_y = math.floor(grid_point.y)
-        if not (0 <= grid_x < costmap.width and 0 <= grid_y < costmap.height):
+        grid_x = math.floor((float(points[0, 0]) - origin_x) / resolution)
+        grid_y = math.floor((float(points[0, 1]) - origin_y) / resolution)
+        if not (0 <= grid_x < width and 0 <= grid_y < height):
             return None, "out_of_bounds"
-        value = int(costmap.grid[grid_y, grid_x])
+        value = int(grid[grid_y, grid_x])
         if value >= CostValues.OCCUPIED:
             return None, "lethal_cell"
         return (80.0 if value == CostValues.UNKNOWN else max(0.0, float(value))), None
 
-    values: list[float] = []
-    for segment_index, (start, end) in enumerate(pairwise(points)):
-        length = float(np.linalg.norm(end - start))
+    total_cost = 0.0
+    value_count = 0
+    for segment_index in range(len(points) - 1):
+        start_x = float(points[segment_index, 0])
+        start_y = float(points[segment_index, 1])
+        delta_x = float(points[segment_index + 1, 0]) - start_x
+        delta_y = float(points[segment_index + 1, 1]) - start_y
+        length = (delta_x**2 + delta_y**2) ** 0.5
         sample_count = max(1, math.ceil(length / sample_spacing_m))
         first_sample = 0 if segment_index == 0 else 1
         for sample_index in range(first_sample, sample_count + 1):
             ratio = sample_index / sample_count
-            point = start + ratio * (end - start)
-            grid_point = costmap.world_to_grid((float(point[0]), float(point[1]), 0.0))
-            grid_x = math.floor(grid_point.x)
-            grid_y = math.floor(grid_point.y)
-            if not (0 <= grid_x < costmap.width and 0 <= grid_y < costmap.height):
+            point_x = start_x + ratio * delta_x
+            point_y = start_y + ratio * delta_y
+            grid_x = math.floor((point_x - origin_x) / resolution)
+            grid_y = math.floor((point_y - origin_y) / resolution)
+            if not (0 <= grid_x < width and 0 <= grid_y < height):
                 return None, "out_of_bounds"
 
-            value = int(costmap.grid[grid_y, grid_x])
+            value = int(grid[grid_y, grid_x])
             if value >= CostValues.OCCUPIED:
                 return None, "lethal_cell"
             # Match min_cost_astar's default unknown penalty: 0.8 * 100.
-            values.append(80.0 if value == CostValues.UNKNOWN else max(0.0, float(value)))
+            total_cost += 80.0 if value == CostValues.UNKNOWN else max(0.0, float(value))
+            value_count += 1
 
-    return (float(np.mean(values)) if values else 0.0), None
+    return (total_cost / value_count if value_count else 0.0), None
 
 
 def _effective_path_cost(
