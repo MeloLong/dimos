@@ -10,6 +10,7 @@
 | Planning baseline | `05ee0a8f` |
 | Scope | Path smoothing, candidate generation, validation, and publication latency |
 | Current priority | P0 |
+| Execution status | Complete; canonical branch and both remotes verified |
 | Planner behavior change allowed | No |
 | Safety-rule change allowed | No |
 
@@ -841,4 +842,4 @@ The optimization is complete only when the repository contains:
 - [x] Moving-robot integration gate passed with retained controller limitations documented.
 - [x] CPU/RSS and planner publication/handoff latency reported; viewer rendering was disabled.
 - [x] Upgrade log and validation artifacts updated.
-- [ ] All commits pushed and remote hashes verified.
+- [x] All commits pushed and remote hashes verified.
