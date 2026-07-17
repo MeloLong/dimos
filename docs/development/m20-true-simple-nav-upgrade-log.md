@@ -991,11 +991,88 @@ the physical comparison itself measured 1.5 us P50 and 2.33 us P95, confirming
 that path sampling and distance-transform work dominate.
 
 **Decision:** keep physical validation shadow-only and keep 0.025 m
-provisional. The next phase remains validator/raw-path contract work: define
-the operational unknown policy, prevent invalid raw fallback, and add real
-localization/tracking error. Turn-aware A* remains deferred until these safety
-contracts pass. Full evidence is under
+provisional. Full evidence is under
 `docs/development/validation/candidate-validator-shadow/2026-07-17/`.
+
+###### Roadmap Pause And New P0 (2026-07-17)
+
+The current geometric output is sufficient for the present simulation and
+planning/control work. The remaining candidate-validator safety roadmap is
+therefore **paused, not completed or cancelled**:
+
+1. `raw_baseline_invalid`: keep the finding open. Raw A* must eventually be
+   rejected, conservatively replanned, or reported as no path before physical
+   fallback can be authoritative.
+2. Unknown-space policy: keep the strict `0.0 m` shadow rule while the source
+   of millimetre-to-centimetre increases is unresolved. Do not replace it with
+   an empirical allowance yet.
+3. Clearance threshold: keep `0.025 m` provisional. Historical replay cannot
+   distinguish it from `0.020 m`; real localization, map, and tracking error
+   are still required.
+4. Authoritative physical selection: keep
+   `path_smoothing_physical_validator_authoritative_enabled: false`. Resume
+   fixed-robot MuJoCo trials only after the first three contracts are closed.
+5. Turn-aware A*: pause the direction-state search upgrade. It improves raw
+   geometry but does not close the safety contracts above.
+
+This pause does not make invalid raw paths safe and does not authorize real
+robot use of the physical decision. It only changes development priority.
+
+The new highest-priority bottleneck is **whole-path smoothing and candidate
+evaluation latency as global path length increases**.
+
+The 2026-07-17 manual run submitted 38 goals. Thirty-six produced valid
+smoothed paths, one returned no path, and one reproduced
+`raw_baseline_invalid/lethal_cell`. For the 37 planned cases, goal receipt to
+validator completion measured 217.4 ms median, 434.4 ms P95, and 457.2 ms
+maximum. The split shows that A* is not the main bottleneck:
+
+| Raw path length | Cases | Median total latency | Median post-A* latency | Median validator latency |
+|---|---:|---:|---:|---:|
+| `< 3 m` | 16 | 152.7 ms | 102.9 ms | 36.7 ms |
+| `3-6 m` | 13 | 245.4 ms | 189.2 ms | 64.6 ms |
+| `6-9 m` | 5 | 332.8 ms | 271.1 ms | 95.5 ms |
+| `> 9 m` | 2 | 451.7 ms | 387.7 ms | 124.5 ms |
+
+Across the 36 valid paths, path length and total latency had Pearson
+correlation `0.881`; path length and post-A* latency had correlation `0.966`.
+A* and safe-goal work took 52.4 ms median, while post-A* smoothing, resampling,
+and validation took 165.3 ms median. The path was handed to LocalPlanner only
+3.8 ms median after validator completion, so transport and controller handoff
+are not the primary delay.
+
+The current implementation explains the scaling:
+
+- the complete raw path is optimized for as many as 40 iterations;
+- each interior point repeatedly validates adjacent swept segments against the
+  costmap;
+- the raw path and each `1.0/0.5/0.25/0.125` candidate are resampled and
+  evaluated again; and
+- `validator_total_ms` starts after the iterative smoothing loop, so current
+  metrics under-report the full optimizer cost.
+
+##### P0 Execution Order: Long-Path Smoothing Performance
+
+1. Add phase timing for safe-goal/costmap construction, A*, iterative
+   smoothing, raw validation, each resample, distance transform, candidate
+   metrics, policy selection, path publication, and LocalPlanner handoff.
+2. Build a repeatable warm/cold benchmark with representative 2 m, 5 m, 10 m,
+   20 m, and longer paths. Use enough repetitions per bucket before setting a
+   production latency target; the current `> 9 m` bucket has only two cases.
+3. Profile before changing behavior. First investigate repeated Python swept
+   sampling, repeated path conversion/resampling, and reusable candidate data.
+   Prefer vectorization or reuse over changing the geometric algorithm.
+4. Require output-equivalence tests for raw path, selected legacy alpha,
+   physical shadow decision, collision result, unknown exposure, clearance,
+   and final controller path. Performance work must not weaken sampling,
+   unknown, or clearance rules.
+5. Re-run the same length matrix and report per-phase P50/P95/max, CPU, RSS,
+   path metrics, and decision differences. Set the optimization target from
+   that representative baseline, then implement the smallest measured fix.
+
+Do not start authoritative physical selection or turn-aware A* while this P0
+performance phase is active. Resume the paused roadmap only when path latency
+is bounded enough for interactive development and deployment.
 
 ##### Stage 3: Reduce Macro Bends In Raw A*
 
