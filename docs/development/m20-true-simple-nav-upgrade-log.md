@@ -1070,6 +1070,112 @@ The current implementation explains the scaling:
    path metrics, and decision differences. Set the optimization target from
    that representative baseline, then implement the smallest measured fix.
 
+##### P0 Bottleneck Profile (2026-07-17)
+
+Offline profiling used the two retained real planning snapshots plus
+representative 2/5/10/20/40 m paths. It did not change repository code or
+planner decisions. The measured implementation scales approximately linearly
+with raw path point count:
+
+| Representative length | Raw points | Current shadows on | Both shadows off | Resample only |
+|---|---:|---:|---:|---:|
+| 2 m | 38 | 41.4 ms | 21.0 ms | 1.0 ms |
+| 5 m | 93 | 85.7 ms | 51.8 ms | 2.6 ms |
+| 10 m | 186 | 162.2 ms | 103.9 ms | 5.2 ms |
+| 20 m | 372 | 311.4 ms | 206.7 ms | 10.3 ms |
+| 40 m | 743 | 608.2 ms | 414.7 ms | 20.5 ms |
+
+The retained 3.36 m and 7.19 m real snapshots measured 49.5/78.4 ms with both
+shadows enabled and 35.1/50.7 ms with both disabled. Generic shadow alone and
+generic plus physical shadow were effectively identical; the physical policy
+comparison itself remains microsecond-scale. The material shadow cost comes
+from forcing all four candidates to be fully built and measured after the
+legacy decision has already selected the first valid alpha.
+
+For the representative 20 m path, the current 311 ms is approximately split
+as follows:
+
+- about 140 ms constructs and resamples message objects: one unused initial
+  raw resample plus five `_resample_xy` calls for raw and four alpha paths;
+- about 140 ms performs iterative smoothing and local swept-cost checks; and
+- about 20-30 ms computes the distance transform, five physical metric sets,
+  the policy, and report data.
+
+Function profiling confirms the mechanics. A 20 m, 372-point path converged in
+18 iterations but still made 7,030 `_effective_path_cost` calls, 7,036 total
+path-cost validations, and 41,702 `world_to_grid` calls. Candidate processing
+created about 3,021 `PoseStamped` objects through Plum multiple dispatch. The
+hot path repeatedly performs this round trip:
+
+```text
+NumPy points -> Path/PoseStamped -> resampled Path/PoseStamped -> NumPy points
+```
+
+It is unnecessary for rejected and diagnostic-only candidates. The initial
+`simple_resample_path()` at the start of
+`constrained_smooth_resample_path()` is also unused on the normal valid
+smoothing path and is recomputed inside candidate selection.
+
+Microbenchmarks support two behavior-preserving optimizations:
+
+1. NumPy arc-length resampling reproduced current coordinates within
+   `4.3e-14 m` while taking 0.02 ms instead of 26.8 ms for the 20 m candidate
+   conversion/resampling path. Constructing the one final output message still
+   took about 11.5 ms and cannot be removed at the module boundary.
+2. Direct scalar grid indexing reproduced current cost/reason results for the
+   full path and every local triple. It evaluated all 370 local triples in
+   0.68 ms instead of 5.04 ms, a 7.4x reduction, by avoiding temporary
+   `Vector3` objects in `world_to_grid()`.
+
+An in-memory equivalent prototype combined those changes while leaving the
+current physical metric implementation intact. It matched final coordinates
+within `2.3e-13 m` and preserved legacy/physical alpha decisions on both real
+snapshots and the 10/20/40 m cases:
+
+| Case | Current | Equivalent prototype | Speedup |
+|---|---:|---:|---:|
+| Real 3.36 m | 48.7 ms | 15.8 ms | 3.09x |
+| Real 7.19 m | 78.9 ms | 23.5 ms | 3.36x |
+| Synthetic 10 m | 159.8 ms | 49.3 ms | 3.24x |
+| Synthetic 20 m | 313.1 ms | 88.5 ms | 3.54x |
+| Synthetic 40 m | 607.2 ms | 165.8 ms | 3.66x |
+
+After this prototype optimization, iterative smoothing remains the largest
+phase: about 51/103 ms at 20/40 m. Four candidate physical metric evaluations
+take about 11/22 ms, final message construction 11/21 ms, and the fixed-size
+distance transform about 9 ms. The physical alpha policy takes about 0.008 ms.
+
+Distance-transform cost scales with costmap area rather than path length. It
+measured about 1.0 ms for 200x300 cells, 4.5 ms for 400x600, 15.7 ms for
+800x1200, and 36.6 ms for 1200x1800. It is secondary for current maps but will
+become relevant if a large global costmap is kept at 0.05 m resolution.
+
+**Recommended implementation order:**
+
+1. Add phase timers first so live simulation measures CPU contention and
+   message publication in addition to offline algorithm time.
+2. Remove the unused eager raw resample and keep raw/candidate geometry as
+   arrays until one output path is selected.
+3. Replace per-sample `world_to_grid()` object construction with an internal
+   direct grid-index helper that preserves floor, bounds, unknown, and lethal
+   semantics exactly.
+4. Re-run output-equivalence and length scaling tests with shadows enabled.
+5. Vectorize physical metric sampling only if the first patch leaves an
+   unacceptable residual. Move the sequential smoothing loop to the existing
+   native extension boundary only if measured targets still require it.
+
+As a configuration-only diagnostic trade-off, disabling both
+`path_smoothing_validator_shadow_enabled` and
+`path_smoothing_physical_validator_shadow_enabled` reduces representative
+runtime by roughly 29-35% without changing the legacy selected path. It also
+removes physical observability, so it is suitable for normal performance runs,
+not validator data collection.
+
+Do not start by lowering collision sample density, reducing iteration limits,
+processing only a local prefix, or loosening unknown/clearance thresholds.
+Those options change safety or geometry, while the measured object-allocation
+and indexing waste can be removed first without changing behavior.
+
 Do not start authoritative physical selection or turn-aware A* while this P0
 performance phase is active. Resume the paused roadmap only when path latency
 is bounded enough for interactive development and deployment.
