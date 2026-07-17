@@ -28,6 +28,18 @@ spacing, cost threshold, and published path behavior remain unchanged.
 5. `scripts/m20_path_smoothing_benchmark.py` provides a deterministic,
    non-LFS 2/5/10/20/40 m benchmark.
 
+Runtime timing is disabled by default. Enable it only while debugging:
+
+```yaml
+replanningastarplanner:
+  path_smoothing_performance_logging_enabled: true
+```
+
+When enabled, GlobalPlanner emits one structured `Path smoothing performance.`
+record per successful constrained plan. When disabled, it passes `timing=None`,
+so phase timing collection and JSON serialization are skipped rather than only
+hiding the log line. Restart DimOS after changing the YAML profile.
+
 ## Offline Results
 
 The same fixed-seed fixture was run before and after the port. Baseline used
@@ -56,6 +68,8 @@ Passed:
 - 250 randomized local-triple equivalence cases;
 - exact array/message resampling and one-final-message checks;
 - 27 available smoothing and replanning-A* tests;
+- 32 targeted tests after adding the default-off runtime logging switch and
+  M20 YAML/config propagation coverage;
 - Ruff lint, Ruff format, and `git diff --check`.
 
 Eight historical tests could not start because this lightweight checkout has
