@@ -1,0 +1,602 @@
+# M20 Long-Path Smoothing Performance Optimization And Validation Plan
+
+## 1. Document Status
+
+| Item | Value |
+|---|---|
+| Project | DimOS M20 true-simple-nav simulation chain |
+| Repository | `/home/markus/work/dimos_m20` on VM `autoware-180` |
+| Branch | `wd/m20-mujoco-simulation` |
+| Planning baseline | `05ee0a8f` |
+| Scope | Path smoothing, candidate generation, validation, and publication latency |
+| Current priority | P0 |
+| Planner behavior change allowed | No |
+| Safety-rule change allowed | No |
+
+This plan converts the completed bottleneck profile into an executable sequence
+of small implementation and validation stages. The objective is to reduce
+long-path latency without changing path geometry, selected alpha, collision
+sampling, unknown-space semantics, clearance semantics, or controller input.
+
+## 中文执行摘要
+
+这份计划把优化拆成四个独立阶段：
+
+1. 先补齐分阶段计时并冻结基线，不改变任何计算逻辑。
+2. 候选轨迹全程保留为 NumPy 数组，只为最终选中的轨迹构造一次
+   `Path/PoseStamped`，同时删除正常链路中重复且未使用的 raw resample。
+3. 在内部热点中直接计算栅格下标，消除数万次
+   `world_to_grid -> Vector3` 临时对象，同时严格保持 floor、越界、unknown
+   和 lethal 语义。
+4. 只有前两项仍不能达标时，才继续合并物理指标扫描或考虑原生数值循环。
+
+每个阶段都必须先通过轨迹坐标、朝向、alpha、碰撞、unknown、净空和失败原因
+的等价测试，再进入 2/5/10/20/40 m 性能矩阵。离线通过后，先进行机器人固定
+的 100 目标 MuJoCo 测试，最后才允许机器人移动。主性能口径始终开启两个
+shadow，禁止通过降低碰撞采样、减少迭代次数或放宽安全阈值来获得提速。
+
+实施采用独立 commit 和普通 `git revert` 回滚；每个阶段完成后推送到
+`origin` 和 `melolong` 并核对三方 hash。
+
+## 2. Current Problem And Baseline
+
+The current constrained smoothing pipeline scales almost linearly with raw path
+point count. The representative offline baseline, with generic and physical
+shadow enabled, is:
+
+| Path length | Raw points | Current P50 |
+|---|---:|---:|
+| 2 m | 38 | 41.4 ms |
+| 5 m | 93 | 85.7 ms |
+| 10 m | 186 | 162.2 ms |
+| 20 m | 372 | 311.4 ms |
+| 40 m | 743 | 608.2 ms |
+
+The latest 38-goal MuJoCo run measured 217.4 ms median and 434.4 ms P95 from
+goal receipt to validator completion. A* itself took about 52.4 ms median;
+post-A* smoothing, resampling, and validation took 165.3 ms median and is the
+current bottleneck.
+
+For a representative 20 m path, the 311 ms offline runtime is approximately:
+
+| Work | Approximate time | Share |
+|---|---:|---:|
+| Repeated `Path/PoseStamped` construction and resampling | 140 ms | 45% |
+| Iterative smoothing and local swept-cost checks | 140 ms | 45% |
+| Distance transform, physical metrics, policy, report data | 20-30 ms | 10% |
+
+The physical alpha comparison itself takes about 0.008 ms and is not a target.
+
+## 3. Required Outcome
+
+The optimized implementation must:
+
+1. Preserve the exact legacy controller path within floating-point tolerance.
+2. Preserve legacy and physical alpha decisions.
+3. Preserve lethal, out-of-bounds, unknown, clearance, and mean-cost results.
+4. Keep both shadow modes available and efficient.
+5. Reduce shadow-enabled 10 m-and-longer P50 by at least 60% in the offline
+   matrix.
+6. Reduce post-A* P95 by at least 50% in the controlled MuJoCo matrix.
+7. Add no new runtime dependency.
+8. Keep the worktree, commits, reports, and remotes reproducible.
+
+Initial offline performance gates are:
+
+| Path length | P50 gate | P95 gate |
+|---|---:|---:|
+| 2 m | <= 20 ms | <= 24 ms |
+| 5 m | <= 35 ms | <= 42 ms |
+| 10 m | <= 60 ms | <= 72 ms |
+| 20 m | <= 100 ms | <= 120 ms |
+| 40 m | <= 180 ms | <= 216 ms |
+
+These gates apply with both
+`path_smoothing_validator_shadow_enabled=true` and
+`path_smoothing_physical_validator_shadow_enabled=true`.
+
+## 4. Non-Goals
+
+This performance phase must not:
+
+- lower collision sample density;
+- reduce `path_smoothing_iterations` merely to pass a latency target;
+- increase `path_smoothing_max_cost_increase`;
+- relax unknown-length or clearance thresholds;
+- process only a local path prefix;
+- change A* weights or add turn-aware A*;
+- enable authoritative physical selection;
+- redesign LocalPlanner or the speed controller;
+- add Numba, Cython, or another runtime dependency in the first implementation.
+
+Those options alter behavior, architecture, or deployment requirements. The
+measured allocation and indexing waste must be removed first.
+
+## 5. Target Data Flow
+
+```mermaid
+flowchart LR
+    A["Raw A* Path message"] --> B["Convert once to XY array"]
+    B --> C["Validate raw array"]
+    C --> D["Iterative smoothing on arrays"]
+    D --> E["Generate raw and alpha arrays"]
+    E --> F["Evaluate cost and physical metrics on arrays"]
+    F --> G["Select legacy and physical alpha"]
+    G --> H["Construct one final Path message"]
+    H --> I["Publish to LocalPlanner"]
+```
+
+Candidate paths that are rejected or used only for shadow diagnostics must
+never be converted to `Path/PoseStamped` messages.
+
+## 6. Phase 0: Freeze Baseline And Add Timers
+
+### 6.1 Code Changes
+
+Add structured timing around the existing implementation before changing its
+behavior. The timing record must contain:
+
+```text
+raw_path_points
+raw_path_length_m
+costmap_width
+costmap_height
+raw_validation_ms
+reference_costs_ms
+smoothing_loop_ms
+smoothing_iterations
+distance_transform_ms
+raw_resample_metrics_ms
+candidate_1_0_ms
+candidate_0_5_ms
+candidate_0_25_ms
+candidate_0_125_ms
+physical_policy_ms
+final_path_message_ms
+optimizer_total_ms
+path_publish_ms
+local_planner_handoff_ms
+```
+
+Primary files:
+
+- `dimos/mapping/occupancy/path_resampling.py`
+- `dimos/navigation/replanning_a_star/global_planner.py`
+
+Emit one compact structured record per successful or rejected plan. Do not log
+per-point or per-iteration records.
+
+### 6.2 Baseline Artifacts
+
+Create a benchmark runner:
+
+```text
+scripts/m20_path_smoothing_benchmark.py
+```
+
+It must support:
+
+- fixed path lengths: 2, 5, 10, 20, and 40 m;
+- fixed raw-point density and deterministic geometry;
+- fixed costmap seed and dimensions;
+- shadow on/off modes;
+- configurable warm-up and measured repetitions;
+- JSON and CSV output;
+- process CPU time, wall time, and peak RSS;
+- P50, P95, maximum, and per-phase distributions.
+
+Default protocol:
+
+```text
+warm-up repetitions: 5 per case
+measured repetitions: 30 per case
+primary mode: both shadows enabled
+secondary mode: both shadows disabled
+costmap resolution: 0.05 m
+path resample spacing: 0.1 m
+collision sample spacing: 0.05 m
+```
+
+Store committed summaries under:
+
+```text
+docs/development/validation/path-smoothing-performance/YYYY-MM-DD/
+```
+
+Do not commit large terminal logs or redundant per-run binary files.
+
+### 6.3 Phase Gate
+
+Phase 0 passes when:
+
+- all timing fields appear exactly once per plan;
+- timing does not alter selected paths or alpha decisions;
+- timing overhead is less than 3% P95;
+- the baseline matrix can be reproduced twice within 10% P95 variation;
+- the generated JSON and CSV validate successfully.
+
+## 7. Phase 1: Keep Candidate Geometry As Arrays
+
+### 7.1 Implementation
+
+Add one private NumPy arc-length resampler, for example:
+
+```python
+def _resample_xy_array(points: np.ndarray, spacing_m: float) -> np.ndarray:
+    ...
+```
+
+Required semantics:
+
+- preserve the first point;
+- preserve the exact final point;
+- remove or skip zero-length segments exactly as the current path does;
+- place intermediate points at the same accumulated arc-length spacing;
+- return an `(N, 2)` float64 array;
+- do not create message objects.
+
+Refactor candidate selection so it stores:
+
+```text
+raw_resampled_points
+candidate_points_by_alpha
+candidate_metrics_by_alpha
+```
+
+Only after the final legacy or authoritative alpha is selected may the code
+construct one output `Path` and add orientations.
+
+### 7.2 Remove Duplicate Work
+
+The eager `simple_resample_path()` currently executed at the start of
+`constrained_smooth_resample_path()` is unused on the normal valid smoothing
+path and then recomputed inside candidate selection.
+
+Change it to lazy fallback behavior:
+
+- construct raw-resampled output only for smoothing-not-applicable paths;
+- construct it for duplicate-point or invalid-raw fallback;
+- otherwise keep the raw-resampled geometry as an array inside selection.
+
+### 7.3 Compatibility Boundary
+
+Keep public `simple_resample_path()` unchanged because other modules and tests
+may depend on its message-based API. The optimized array helper remains private
+to constrained smoothing.
+
+### 7.4 Phase Gate
+
+Phase 1 passes when:
+
+- every equivalence test in Section 10 passes;
+- only one final candidate becomes a `Path` message;
+- a 20 m shadow-enabled path improves by at least 35%;
+- no candidate, metric, report, or selected-alpha field disappears;
+- no new fallback or invalid-baseline case appears.
+
+## 8. Phase 2: Replace Object-Heavy Grid Conversion
+
+### 8.1 Implementation
+
+Add a small internal helper or inline calculation that converts world XY to
+grid integer coordinates without constructing `Vector3`:
+
+```python
+grid_x = math.floor((x - origin_x) / resolution)
+grid_y = math.floor((y - origin_y) / resolution)
+```
+
+Use it in the path-cost and physical-metric hot paths.
+
+The implementation must preserve:
+
+- `math.floor`, including negative coordinates;
+- width and height bounds checks;
+- out-of-bounds failure before grid access;
+- `value >= CostValues.OCCUPIED` as lethal;
+- `CostValues.UNKNOWN` effective cost of 80;
+- current first-sample and shared-endpoint rules;
+- current represented-length calculation for unknown exposure.
+
+Do not change the public `OccupancyGrid.world_to_grid()` API globally in this
+phase. Optimize only the measured internal hot path.
+
+### 8.2 Phase Gate
+
+Phase 2 passes when:
+
+- deterministic and randomized cost-validation equivalence tests pass;
+- every failure reason and mean cost matches the baseline;
+- the 370-local-triple benchmark is at least 5x faster;
+- all offline length P50/P95 gates in Section 3 pass;
+- output geometry and alpha decisions remain equivalent.
+
+## 9. Phase 3: Optional Residual Optimization
+
+Run this phase only if Phase 2 does not meet the full target.
+
+### 9.1 Vectorize Physical Metrics
+
+Generate sampled XY arrays and integer grid indices once per path, then derive:
+
+- lethal and out-of-bounds status;
+- mean effective cost;
+- unknown represented length;
+- minimum clearance;
+- P5 clearance.
+
+Avoid three separate scans of the same samples. Reuse the one distance
+transform already computed per plan.
+
+### 9.2 Native Smoothing Boundary
+
+If iterative smoothing remains above the accepted budget after array and grid
+optimizations, move only the sequential numeric loop to the project's existing
+native-extension approach. Keep message conversion, reporting, and policy in
+Python.
+
+Do not introduce a native implementation until Python behavior is fully
+captured by equivalence tests.
+
+## 10. Functional Equivalence Test Plan
+
+### 10.1 Arc-Length Resampling Tests
+
+Compare current and new resampling for:
+
+- straight horizontal and vertical paths;
+- diagonal paths;
+- repeated points;
+- zero-length interior segments;
+- one-, two-, and many-point paths;
+- spacing longer than total path length;
+- exact-multiple and non-exact-multiple lengths;
+- negative world coordinates;
+- random deterministic polylines.
+
+Acceptance:
+
+```text
+same output point count
+maximum XY error <= 1e-10 m
+same first and final XY
+orientation quaternion error <= 1e-10
+```
+
+### 10.2 Cost And Collision Tests
+
+Cover:
+
+- free cells;
+- positive gradient costs;
+- unknown cells;
+- lethal cells;
+- positive and negative map origins;
+- points immediately inside and outside every boundary;
+- samples exactly on cell boundaries;
+- segments shorter, equal to, and longer than sample spacing;
+- shared segment endpoints;
+- random seeded grids and paths.
+
+Acceptance:
+
+```text
+same mean cost within 1e-12
+same validation_reason
+same sampled-cell sequence where inspected
+same unknown represented length within 1e-10 m
+```
+
+### 10.3 Candidate-Selection Tests
+
+Verify scenarios selecting:
+
+- alpha 1.0;
+- alpha 0.5;
+- alpha 0.25;
+- alpha 0.125;
+- raw fallback;
+- lethal rejection;
+- out-of-bounds rejection;
+- unknown-length rejection;
+- clearance-loss rejection;
+- legacy and physical disagreement while authoritative remains false.
+
+Acceptance:
+
+```text
+same legacy_selected_alpha
+same physical_selected_alpha
+same physical_decision_matches_legacy
+same rejection reason for every alpha
+same final controller path
+```
+
+### 10.4 Real And Generated Snapshot Tests
+
+Required cases:
+
+- retained real planning snapshot;
+- retained real detour snapshot;
+- 0.95 m invalid corridor;
+- 1.00 m invalid corridor;
+- 1.20 m valid corridor;
+- straight, turn, S, and V paths;
+- historical unknown-increase and clearance-loss cases.
+
+Temporary `/tmp` snapshots are not sufficient for CI. Promote only the minimal,
+non-sensitive deterministic fixture required for regression, or generate the
+fixture in the test itself.
+
+## 11. Offline Performance Validation
+
+Run on the same VM with:
+
+- no active MuJoCo process;
+- no stale diagnostic CPU process;
+- the same Python environment and commit;
+- the same costmap and path seeds;
+- both shadows enabled for the primary result;
+- at least 30 measured repetitions per length.
+
+Report:
+
+- raw point count and path length;
+- optimizer P50/P95/max;
+- each phase P50/P95/max;
+- process CPU time;
+- peak RSS;
+- output-equivalence status;
+- legacy and physical alpha counts;
+- invalid and fallback counts.
+
+The optimized and baseline runs must be interleaved or repeated in both orders
+to reduce CPU-frequency and VM scheduling bias.
+
+## 12. MuJoCo Integration Validation
+
+### 12.1 Fixed-Robot Matrix
+
+Start `m20-true-simple-nav-sim` with the robot held fixed. Use identical scene,
+map warm-up, goals, and hold-position behavior for baseline and optimized runs.
+
+Run at least:
+
+```text
+100 successful plans
+20 goals below 3 m
+20 goals from 3 to 6 m
+20 goals from 6 to 10 m
+20 goals above 10 m where the map permits
+20 obstacle/unknown/narrow-passage goals
+```
+
+Capture timestamps for:
+
+```text
+click publish
+goal callback receive
+raw A* publish
+optimizer start and finish
+smooth path publish
+Rerun bridge receive
+LocalPlanner handoff
+```
+
+Fixed-robot gate:
+
+- zero path or alpha differences outside tolerance;
+- zero new planner exceptions;
+- zero shadow-record mismatches;
+- zero selected-policy violations;
+- post-A* P95 reduced by at least 50%;
+- end-to-end P95 reduced by at least 35%;
+- CPU and RSS do not regress by more than 10%.
+
+### 12.2 Moving-Robot Functional Run
+
+Only after the fixed-robot gate passes:
+
+- run open, obstacle-constrained, narrow, and moving-obstacle routes;
+- verify path completion, replans, stuck logic, and goal cancellation;
+- confirm no collision or command discontinuity caused by path publication;
+- inspect raw and smooth path overlays in Rerun;
+- verify web and desktop viewer behavior separately.
+
+This phase validates integration, not just numeric equivalence.
+
+## 13. Focused Verification Commands
+
+The implementation task should run at least:
+
+```bash
+cd /home/markus/work/dimos_m20
+source .venv/bin/activate
+
+pytest -q dimos/mapping/occupancy/test_path_resampling.py
+pytest -q dimos/mapping/occupancy/test_constrained_path_smoothing.py
+pytest -q dimos/navigation/replanning_a_star/test_global_planner_stuck.py
+pytest -q dimos/robot/deeprobotics/m20/nav/test_m20_true_simple_nav_sim.py
+
+ruff check \
+  dimos/mapping/occupancy/path_resampling.py \
+  scripts/m20_path_smoothing_benchmark.py
+
+ruff format --check \
+  dimos/mapping/occupancy/path_resampling.py \
+  scripts/m20_path_smoothing_benchmark.py
+
+git diff --check
+```
+
+If a historical test requires unavailable private LFS data, record it as a
+known environment limitation and run the new deterministic non-LFS equivalent.
+Do not report an unavailable LFS test as a passed test.
+
+## 14. Commit And Push Strategy
+
+Use small, independently revertible commits:
+
+```text
+perf(nav): add smoothing phase diagnostics
+perf(nav): keep smoothing candidates as arrays
+perf(nav): remove object-heavy grid conversion
+test(nav): add long-path smoothing performance matrix
+docs(nav): record smoothing optimization validation
+```
+
+After each implementation commit:
+
+1. run focused functional tests;
+2. run the relevant performance subset;
+3. inspect the diff for accidental parameter changes;
+4. push `wd/m20-mujoco-simulation` to `origin` and `melolong`;
+5. verify local, origin, and melolong hashes match.
+
+Do not force-push or combine unrelated control/planning work into these commits.
+
+## 15. Rollback And Stop Conditions
+
+Use normal `git revert` of the smallest failing commit. Do not use destructive
+reset commands.
+
+Stop the optimization and investigate before continuing if:
+
+- any selected alpha changes unexpectedly;
+- path point count or endpoint changes;
+- a new lethal, unknown, clearance, or out-of-bounds difference appears;
+- raw-baseline-invalid behavior changes without an explicit safety task;
+- P95 improves only when shadow is disabled;
+- CPU or RSS increases by more than 10%;
+- live performance differs from offline performance by more than 2x without an
+  identified simulator or scheduling cause.
+
+## 16. Final Deliverables
+
+The optimization is complete only when the repository contains:
+
+- phase timing in structured planner logs;
+- the behavior-preserving optimized implementation;
+- deterministic equivalence tests;
+- a reproducible offline benchmark runner;
+- baseline and optimized JSON/CSV summaries;
+- a MuJoCo fixed-robot and moving-robot validation report;
+- updated upgrade-log conclusions;
+- clean commits pushed to both remotes.
+
+## 17. Execution Checklist
+
+- [ ] Phase 0 timing fields implemented and baseline frozen.
+- [ ] Benchmark runner and deterministic fixtures added.
+- [ ] Phase 1 array-only candidate pipeline implemented.
+- [ ] Duplicate eager resampling removed.
+- [ ] Phase 1 equivalence and performance gate passed.
+- [ ] Phase 2 direct grid-index path implemented.
+- [ ] Randomized cost and boundary equivalence passed.
+- [ ] Offline 2/5/10/20/40 m P50/P95 gates passed.
+- [ ] Optional Phase 3 decision recorded.
+- [ ] Fixed-robot MuJoCo 100-plan gate passed.
+- [ ] Moving-robot integration gate passed.
+- [ ] CPU/RSS and viewer latency reported.
+- [ ] Upgrade log and validation artifacts updated.
+- [ ] All commits pushed and remote hashes verified.

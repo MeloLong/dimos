@@ -1053,6 +1053,10 @@ The current implementation explains the scaling:
 
 ##### P0 Execution Order: Long-Path Smoothing Performance
 
+The executable implementation, equivalence-test, benchmark, MuJoCo validation,
+rollback, and commit plan is maintained in
+[`m20-path-smoothing-performance-execution-plan.md`](m20-path-smoothing-performance-execution-plan.md).
+
 1. Add phase timing for safe-goal/costmap construction, A*, iterative
    smoothing, raw validation, each resample, distance transform, candidate
    metrics, policy selection, path publication, and LocalPlanner handoff.
