@@ -38,6 +38,7 @@ from dimos.memory2.type.observation import EmbeddedObservation, Observation
 from dimos.models.embedding.base import EmbeddingModel
 from dimos.msgs.geometry_msgs.PoseStamped import PoseStamped
 from dimos.msgs.sensor_msgs.Image import Image
+from dimos.msgs.tf2_msgs.TFMessage import TFMessage
 from dimos.utils.data import backup_file
 from dimos.utils.logging_config import setup_logger
 
