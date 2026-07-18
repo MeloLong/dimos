@@ -259,6 +259,7 @@ class OnExisting(str, enum.Enum):
 class RecorderConfig(MemoryModuleConfig):
     on_existing: OnExisting = OnExisting.BACKUP
     backup_keep_last: int = Field(default=10, ge=0)
+    root_frame: str = "world"
     default_frame_id: str = "base_link"
     tf_tolerance: float = 0.5
     db_path: str | Path = "recording.db"
