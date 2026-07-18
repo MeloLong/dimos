@@ -344,10 +344,16 @@ class Recorder(MemoryModule):
             logger.warning("Recorder has no In ports — nothing to record, subclass the Recorder")
             return
 
+        self._prepare_streams()
+        self._pose_setters = self._collect_pose_setters()
+
         for name, port in self.inputs.items():
             stream: Stream[Any] = self.store.stream(name, port.type)
             self._port_to_stream(name, port, stream)
             logger.info("Recording %s (%s)", name, port.type.__name__)
+
+        if self.config.record_tf:
+            self._record_tf()
 
     def _port_to_stream(self, name: str, input_topic: In[Any], stream: Stream[Any]) -> None:
         """Append each message from *input_topic* to *stream*, attaching world pose via tf.
