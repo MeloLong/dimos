@@ -28,7 +28,6 @@ from dimos.msgs.geometry_msgs.Twist import Twist
 from dimos.msgs.nav_msgs.Odometry import Odometry
 from dimos.msgs.nav_msgs.Path import Path as NavPath
 from dimos.msgs.sensor_msgs.PointCloud2 import PointCloud2
-from dimos.msgs.std_msgs.Bool import Bool
 from dimos.msgs.std_msgs.Int8 import Int8
 
 
@@ -61,7 +60,7 @@ class NavRecord(Recorder):
     # LocalPlanner details
     effective_cmd_vel: In[Twist]
     slow_down: In[Int8]
-    goal_reached: In[Bool]
+    goal_reached: In[LcmBool]
 
     # Point clouds
     terrain_map: In[PointCloud2]
