@@ -2,7 +2,7 @@
 
 - Status: Active engineering record
 - Baseline: `wd/m20-mujoco-simulation`, commit `5ecbb8e1`
-- Scope: MuJoCo `m20-true-simple-nav-sim` planning path quality and stability
+- Scope: MuJoCo `m20-simple-nav-sim` planning path quality and stability
 - Updated: 2026-07-16
 
 ## Purpose
@@ -13,13 +13,13 @@ options so later tuning and real-robot work can start from a known state.
 
 ## System Architecture
 
-The simulation blueprint `m20_true_simple_nav_sim` is defined in
-`dimos/robot/deeprobotics/m20/nav/m20_true_simple_nav.py`. It wires the
+The simulation blueprint `m20_simple_nav_sim` is defined in
+`dimos/robot/deeprobotics/m20/nav/m20_simple_nav.py`. It wires the
 following modules together through `autoconnect`:
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                         m20-true-simple-nav-sim                          │
+│                         m20-simple-nav-sim                          │
 ├─────────────────────────────────────────────────────────────────────────┤
 │  M20MujocoSimConnection                                                  │
 │      │ publishes: dimos/slam_odom, dimos/slam_aligned_points            │
@@ -51,7 +51,7 @@ The blueprint is started with:
 ```bash
 cd /home/markus/work/dimos_m20
 source .venv/bin/activate
-dimos --rerun-open none run m20-true-simple-nav-sim
+dimos --rerun-open none run m20-simple-nav-sim
 ```
 
 The checked-in MuJoCo profile lives in
@@ -1209,7 +1209,7 @@ instead of only stopping after a lethal cell is touched.
 
 ### Motivation: The Current Speed Gap
 
-Today the `m20-true-simple-nav-sim` chain produces a **static geometric path**
+Today the `m20-simple-nav-sim` chain produces a **static geometric path**
 `(x, y, θ)` with 0.1 m spacing. The `LocalPlanner` / `PController` turns that
 path into `cmd_vel` with two rules:
 
@@ -1713,14 +1713,14 @@ Commit `9726f754` implements candidate A for the simple-nav planner chain.
 
 `min_cost_astar` itself retains defaults `distance_weight=0.0` and
 `cell_cost_weight=1.0`. Existing callers therefore preserve the old
-cost-first behavior unless they explicitly opt in. The true simple-nav
+cost-first behavior unless they explicitly opt in. The simple-nav
 `ReplanningAStarPlanner` is the only path enabled with the new defaults.
 
 ### Verification Completed
 
 - Native C++ extension rebuilt successfully in the VM.
 - New C++/Python terminal-hook regression: 2 passed.
-- `m20-true-simple-nav-sim` blueprint tests and blueprint-registry test: 5
+- `m20-simple-nav-sim` blueprint tests and blueprint-registry test: 5
   passed.
 - Lint and formatting checks for the A* directory passed.
 - The complete historical A* test file remains blocked by protected LFS test
@@ -1728,7 +1728,7 @@ cost-first behavior unless they explicitly opt in. The true simple-nav
 
 ## Next Validation Sequence
 
-1. Restart `m20-true-simple-nav-sim`; the already-running process cannot load
+1. Restart `m20-simple-nav-sim`; the already-running process cannot load
    the new Python module or shared library.
 2. Reproduce the former near-goal case and capture raw A* cells and the
    resampled path. Confirm the endpoint no longer overshoots and returns.
@@ -1759,7 +1759,7 @@ cost-first behavior unless they explicitly opt in. The true simple-nav
 
 ## Related Records
 
-- `docs/codex-sessions/completed/2026-07-15_2304_m20-true-simple-nav-path-quality-investigation.md`
+- `docs/codex-sessions/completed/2026-07-15_2304_m20-simple-nav-path-quality-investigation.md`
 - `docs/development/issues/m20-goal-pose-final-orientation-contract.md`
 - `dimos/mapping/costmapper.py`
 - `dimos/navigation/replanning_a_star/`
@@ -1770,7 +1770,7 @@ cost-first behavior unless they explicitly opt in. The true simple-nav
 
 | Item | Value |
 |---|---|
-| Project | DimOS M20 true-simple-nav simulation chain |
+| Project | DimOS M20 simple-nav simulation chain |
 | Repository | `/home/markus/work/dimos_m20` on VM `autoware-180` |
 | Branch | `wd/m20-mujoco-simulation` |
 | Planning baseline | `05ee0a8f` |
@@ -2415,7 +2415,7 @@ to reduce CPU-frequency and VM scheduling bias.
 
 #### 12.1 Fixed-Robot Matrix
 
-Start `m20-true-simple-nav-sim` with the robot held fixed. Use identical scene,
+Start `m20-simple-nav-sim` with the robot held fixed. Use identical scene,
 map warm-up, goals, and hold-position behavior for baseline and optimized runs.
 
 Run at least:
@@ -2527,7 +2527,7 @@ source .venv/bin/activate
 pytest -q dimos/mapping/occupancy/test_path_resampling.py
 pytest -q dimos/mapping/occupancy/test_constrained_path_smoothing.py
 pytest -q dimos/navigation/replanning_a_star/test_global_planner_stuck.py
-pytest -q dimos/robot/deeprobotics/m20/nav/test_m20_true_simple_nav_sim.py
+pytest -q dimos/robot/deeprobotics/m20/nav/test_m20_simple_nav_sim.py
 
 ruff check \
   dimos/mapping/occupancy/path_resampling.py \

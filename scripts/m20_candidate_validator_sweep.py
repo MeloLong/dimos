@@ -262,7 +262,7 @@ def _arguments() -> argparse.Namespace:
     parser.add_argument(
         "--log",
         type=Path,
-        default=Path("/tmp/m20_true_simple_nav_sim.log"),
+        default=Path("/tmp/m20_simple_nav_sim.log"),
         help="stdout log of the running shadow-enabled simulation",
     )
     parser.add_argument(

@@ -118,7 +118,7 @@ _m20_slam_ray_tracer = RayTracingVoxelMap.blueprint(
 #     ]
 # )
 
-m20_true_simple_nav = autoconnect(
+m20_simple_nav = autoconnect(
     m20,
     _m20_slam_ray_tracer,
     CostMapper.blueprint(
@@ -147,7 +147,7 @@ m20_true_simple_nav = autoconnect(
 _go1_sim_clearance = GO1_MUJOCO_ENVELOPE["wall_clearance_m"]
 _go1_sim_height = GO1_MUJOCO_ENVELOPE["robot_height"]
 
-m20_true_simple_nav_sim = autoconnect(
+m20_simple_nav_sim = autoconnect(
     rerun,
     _m20_slam_ray_tracer,
     CostMapper.blueprint(

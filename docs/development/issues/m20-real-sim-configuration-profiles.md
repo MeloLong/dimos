@@ -253,7 +253,7 @@ This example describes the ownership boundary, not a required API shape.
 - `dimos/core/coordination/blueprints.py`
 - `dimos/core/coordination/module_coordinator.py`
 - `dimos/robot/deeprobotics/m20/nav/m20_dan_nav.py`
-- `dimos/robot/deeprobotics/m20/nav/m20_true_simple_nav.py`
+- `dimos/robot/deeprobotics/m20/nav/m20_simple_nav.py`
 - `dimos/robot/deeprobotics/m20/config/mujoco_sim.yaml`
 - `dimos/navigation/nav_3d/mls_planner/mls_planner_native.py`
 - `dimos/navigation/nav_3d/mls_planner/rust/src/mls_planner.rs`

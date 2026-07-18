@@ -2,7 +2,7 @@
 
 - Status: Open / design ready for implementation
 - Priority: Medium for current click-to-go; High before docking, inspection, or tasks requiring a terminal heading
-- Scope: m20_true_simple_nav goal ingress, planning contract, and terminal orientation behavior
+- Scope: m20_simple_nav goal ingress, planning contract, and terminal orientation behavior
 - Affected modules: Viewer bridges, ReplanningAStarPlanner, GlobalPlanner, path resampling, and LocalPlanner
 - Baseline inspected: MeloLong/dimos feat/wd/m20 at 8cdbbfa1
 - Discovered on: 2026-07-15
@@ -176,7 +176,7 @@ explicit at the planner boundary.
 
 ## Relevant Files
 
-- dimos/robot/deeprobotics/m20/nav/m20_true_simple_nav.py
+- dimos/robot/deeprobotics/m20/nav/m20_simple_nav.py
 - dimos/navigation/replanning_a_star/module.py
 - dimos/navigation/replanning_a_star/global_planner.py
 - dimos/mapping/occupancy/path_resampling.py
