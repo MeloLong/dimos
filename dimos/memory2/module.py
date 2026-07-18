@@ -252,6 +252,7 @@ class OnExisting(str, enum.Enum):
     OVERWRITE = "overwrite"
     ERROR = "error"
     BACKUP = "backup"
+    APPEND = "append"
 
 
 class RecorderConfig(MemoryModuleConfig):
