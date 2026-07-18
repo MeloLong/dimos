@@ -158,6 +158,7 @@
           "development/docker",
           "development/grid_testing",
           "development/large_file_management",
+          "development/m20-navigation-data-flywheel",
           "development/profiling_dimos",
           "development/writing_docs"
         ]
