@@ -46,6 +46,11 @@ enabled. It is not a raw transport capture of every DimOS topic.
 file size. Choose a value that leaves enough RAM for simulation and check disk
 space before long runs.
 
+The server must start first. If DimOS starts while port `9877` is free, its
+bridge starts its own server without `--save`; a later external server cannot
+bind the port or retroactively persist the earlier Rerun events. Stop DimOS,
+start the external server, then restart DimOS to record a full run.
+
 ### Validate And Replay An RRD
 
 ```bash
@@ -81,12 +86,32 @@ to a named stream. It preserves timestamps and, when TF is available, pose
 anchors. The database is structured data suitable for stream queries and
 replay-driven tooling, unlike the viewer-oriented RRD.
 
+`nav-record` is currently constructed with the navigation coordinator at
+`dimos run` startup. The CLI has no supported operation that dynamically
+injects it into an already-running coordinator. Include `nav-record` in the
+initial command to capture the full run; starting a recorder later cannot
+recover messages emitted before it subscribed.
+
 The generic recorder does not subscribe by wildcard. In the current
 `m20-simple-nav-sim` wiring, it automatically records TF and `global_map`,
 but does not alias `dimos/slam_odom` to `odometry` or
 `dimos/slam_aligned_points` to `registered_scan`; it also has no RGB input.
 Treat that artifact as partial until an M20-specific recorder composition adds
 those mappings.
+
+### Independent M20 Recorder Design
+
+The recommended future M20 solution is a standalone, read-only recorder
+blueprint, for example `m20-sim-nav-record`. It would run in a separate DimOS
+process, subscribe to the existing LCM transport, and write SQLite without
+starting navigation or sending actuator commands. Its explicit mappings would
+cover `dimos/slam_odom`, `dimos/slam_aligned_points`, RGB, TF, maps, goals,
+paths, and commands.
+
+This design has no Rerun port dependency: it can start after navigation and
+record all subsequent messages, or start first to capture the full run. It is
+not implemented in the current branch; do not substitute the generic
+`nav-record` and assume it captures the M20-specific sensor topics.
 
 ### Inspect And Render A DB
 

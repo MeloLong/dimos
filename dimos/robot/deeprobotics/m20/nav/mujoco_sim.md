@@ -52,6 +52,11 @@ uv run --no-sync rerun rrd verify /public/M20_dimos/run.rrd
 uv run --no-sync rerun /public/M20_dimos/run.rrd --memory-limit 8GB
 ```
 
+The Rerun server must start before DimOS. If DimOS starts first, its bridge
+claims port `9877` without `--save`; a later recording server cannot bind that
+port or save the earlier events. Restart both processes in the documented
+order when that happens.
+
 For a structured SQLite recording, compose the optional recorder:
 
 ```bash
@@ -66,6 +71,13 @@ records TF and `global_map`; it does not automatically capture
 `dimos mem rerun /path/run.db --out /path/run-from-db.rrd --no-gui`.
 See [Navigation Recording And Replay](/docs/usage/navigation_recording_replay.md)
 for stream inspection, web replay, and programmatic SQLite replay.
+
+The current DB recorder is part of the initial `dimos run` composition and
+cannot be dynamically added to an already-running navigation coordinator. A
+future standalone `m20-sim-nav-record` process should subscribe to the same
+LCM topics with explicit M20 sensor mappings. That design would permit
+mid-run capture of future messages without port `9877` dependency, but it is
+not yet an available blueprint.
 
 The simulation also enables one person-shaped moving obstacle. It reuses the
 existing MuJoCo mocap person and `/person_pose` transport, so the obstacle is
