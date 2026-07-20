@@ -30,6 +30,43 @@ Go1 envelope from `mujoco_sim.yaml`: 0.50 m height and 0.45 m radial
 clearance, resulting in a 0.90 m A* robot width and rotation diameter. It is a
 planning/control integration test, not an M20 dynamics validation.
 
+## Recording And Replay
+
+Use an external Rerun server to persist visual diagnostics, including enabled
+RGB, SLAM point clouds, maps, TF, and planner visuals. Start it before DimOS:
+
+```bash
+mkdir -p /public/M20_dimos
+uv run --no-sync rerun --serve-grpc --port 9877 \
+  --server-memory-limit 15GB \
+  --save "/public/M20_dimos/m20_$(date +%Y%m%d_%H%M%S).rrd"
+```
+
+Then start `m20-simple-nav-sim` in a separate terminal with
+`--rerun-open none`. The M20 bridge detects the existing port `9877` and
+connects to it. Stop DimOS first and then stop the Rerun server to finalize the
+RRD. Verify and replay the result with:
+
+```bash
+uv run --no-sync rerun rrd verify /public/M20_dimos/run.rrd
+uv run --no-sync rerun /public/M20_dimos/run.rrd --memory-limit 8GB
+```
+
+For a structured SQLite recording, compose the optional recorder:
+
+```bash
+mkdir -p /public/M20_dimos/db
+uv run --no-sync dimos --rerun-open none run m20-simple-nav-sim nav-record \
+  --option "navrecord.db_path=/public/M20_dimos/db/m20-sim.db"
+```
+
+`nav-record` records only connected streams. The current M20 Sim composition
+records TF and `global_map`; it does not automatically capture
+`dimos/slam_odom`, `dimos/slam_aligned_points`, or RGB. Render a DB to RRD with
+`dimos mem rerun /path/run.db --out /path/run-from-db.rrd --no-gui`.
+See [Navigation Recording And Replay](/docs/usage/navigation_recording_replay.md)
+for stream inspection, web replay, and programmatic SQLite replay.
+
 The simulation also enables one person-shaped moving obstacle. It reuses the
 existing MuJoCo mocap person and `/person_pose` transport, so the obstacle is
 visible to RGB and synthetic point clouds. Physical contact is disabled by

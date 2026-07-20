@@ -2,6 +2,10 @@
 
 Record sensor streams to disk and replay them with original timing. Useful for testing, debugging, and creating reproducible datasets.
 
+For navigation Rerun `.rrd` recordings and memory2 SQLite `.db` recordings,
+see [Navigation Recording And Replay](../navigation_recording_replay.md). This
+page documents the legacy pickle-based `TimedSensorStorage` workflow.
+
 ## Quick Start
 
 ### Recording
