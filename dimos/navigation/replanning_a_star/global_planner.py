@@ -510,8 +510,14 @@ class GlobalPlanner(Resource):
     def _clear_robot_footprint(
         self, costmap: OccupancyGrid, binary: OccupancyGrid, robot_pos: Vector3
     ) -> None:
-        """Clear inflated costs under the robot while preserving observed obstacles."""
+        """Make the cells under the robot passable for planning.
+
+        A new obstacle can first be observed while the robot is inside its
+        inflation envelope. Clearing only inflated costs lets A* escape while
+        preserving cells occupied in the raw binary costmap.
+        """
         if binary.grid.shape != costmap.grid.shape or binary.origin != costmap.origin:
+            # A newer map update raced in between building the two grids.
             return
 
         center = costmap.world_to_grid(robot_pos)
