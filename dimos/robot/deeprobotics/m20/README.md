@@ -35,10 +35,14 @@ The asset inventory and DimOS-specific changes are recorded in
 [SOURCE.md](/dimos/robot/deeprobotics/m20/assets/SOURCE.md). Do not replace
 the assets with an unverified third-party model or a Unitree policy.
 
-The RGB and synthetic depth cameras are DimOS simulation additions. The
-official SDK asset does not specify the physical M20 camera/lidar models,
-intrinsics, scan pattern, timing, or calibration, so these streams must not be
-treated as hardware-equivalent sensor models.
+The RGB camera and lidar mounts are DimOS simulation additions. The project
+hardware uses front and rear RoboSense Airy 96-beam lidars. RoboSense's
+[official product specification](https://www.robosense.ai/en/IncrementalComponents/Airy)
+defines a 360 x 90-degree hemispherical FOV, and the
+[official driver](https://github.com/RoboSense-LiDAR/rs_driver/blob/897b14d3bdb6186a75df27ba51b65b5bd5557723/src/rs_driver/driver/decoder/decoder_RSAIRY.hpp)
+defines 96-channel mode, a 0.1-60 m decoder range, and per-device calibration
+angles. Neither official source publishes the M20 mounting transforms or a
+reusable MuJoCo model, so these streams remain an explicit approximation.
 
 ## Control-Fidelity Review
 
@@ -90,8 +94,8 @@ the correct policy-level remedy.
 | --- | --- | --- |
 | Official source and policy | Pass | BSD-3-Clause source audited; vendored ONNX is byte-identical to upstream and exposes `obs [1,57] -> actions [1,16]` |
 | Model and controller contract | Pass | `nq=23`, `nv=22`, `nu=16`; joint tree, inertia, limits, torque ranges, mapping, PD gains, and 20 ms policy cadence checked against the official runner |
-| Rendering and synthetic sensors | Pass | Front RGB plus front/rear 48-row synthetic depth, nonempty point cloud, and no robot self-scan with groups `(0, 1)` |
-| DimOS integration | Pass | Focused suite: 36 tests; obstacle suite: 15 tests plus explicit MuJoCo check; simple-nav and DAN blueprints completed bounded starts |
+| Rendering and synthetic sensors | Pass | Front RGB plus two front/rear 96-channel, 360 x 90-degree hemispherical raycasts, nonempty point cloud, and no robot self-scan with groups `(0, 1)` |
+| DimOS integration | Pass | Expanded M20/MuJoCo suite: 70 default tests plus 1 explicit `mujoco` test; a Rerun-attached simple-nav run reached `(0, 1)` from `(-1.197, 1.002)` while RGB, lidar, local map, global map, and costmap streams remained live |
 | Packaging and docs | Pass | Wheel contains 21 M20 assets; pre-commit, LFS, large-file, and doclinks checks passed |
 | Standstill and forward | Pass | Zero command remains upright; `[0.2,0,0]` for 3 s moves `+0.4884 m` forward with `-0.0018 m` lateral drift |
 | Lateral and yaw tracking | Open | Small lateral command has little lateral response; maximum lateral couples backward motion; signed yaw is materially asymmetric |
@@ -228,11 +232,13 @@ uv run --no-sync dimos --rerun-open none run m20-simple-nav-sim \
 ```
 
 The normal profile publishes only front 640 x 360 RGB at 10 Hz and a merged
-front/rear point cloud at 2 Hz. Each synthetic depth view uses 640 horizontal
-samples, 48 vertical rows, and a 10 m range. The 48 rows approximate reduced
-vertical lidar channels; they do not reproduce a calibrated physical 48-line
-scan pattern or prove equivalence to the real M20 sensors. The mocap person is
-visible to cameras but does not collide with M20 by default.
+front/rear point cloud at 2 Hz. Each simulated Airy uses 192 azimuth samples,
+96 vertical channels, a 360 x 90-degree hemispherical FOV, a 0.1 m minimum
+range, and a 10 m runtime cutoff. The real Airy supports a 60 m decoder range
+and a much denser point stream; the lower simulated rate and azimuth density
+keep navigation tests responsive. Exact factory beam angles, timing, noise,
+motion distortion, occlusion, and M20 mounting transforms are not reproduced.
+The mocap person is visible to sensors but does not collide with M20 by default.
 
 ## Verification Checklist
 

@@ -29,35 +29,42 @@ m20mujocosimconnection:
   # Publish the same RGB renderer on color_image_rear. Keep false because this model has no rear RGB camera.
   publish_rear_image: false
 
-  # Master switch for depth rendering and synthetic point-cloud generation.
+  # Master switch for synthetic lidar and point-cloud generation.
   enable_pointcloud: true
+
+  # Airy uses a 360 x 90-degree hemispherical scan rather than a perspective depth image.
+  pointcloud_scan_pattern: airy_hemisphere
 
   # Synthetic point-cloud publication rate in frames per second.
   pointcloud_fps: 2.0
 
-  # Horizontal samples rendered for each synthetic lidar view.
-  pointcloud_width: 640
+  # Azimuth samples per simulated revolution and per Airy unit. The real sensor
+  # emits many more points; 192 keeps the navigation simulation responsive.
+  pointcloud_width: 192
 
-  # Vertical depth samples per view. This approximates a 48-line lidar but does
-  # not reproduce a calibrated physical scan pattern or timing model.
-  pointcloud_height: 48
+  # Airy 96-beam mode. Exact beam angles remain device-calibration data.
+  pointcloud_height: 96
 
-  # Front and rear MuJoCo depth cameras combined into one robot-centric point cloud.
+  # Front and rear Airy mount frames combined into one robot-centric point cloud.
   pointcloud_camera_names:
-    - lidar_front_camera # Forward-facing depth camera.
-    - lidar_rear_camera  # Rear-facing depth camera.
+    - lidar_front_camera # Front Airy ray origin.
+    - lidar_rear_camera  # Rear Airy ray origin.
 
-  # MuJoCo geometry groups visible to depth cameras. Groups 2 and 3 are excluded to avoid scanning the robot itself.
+  # MuJoCo geometry groups visible to lidar rays. Groups 2 and 3 are excluded to avoid scanning the robot itself.
   pointcloud_geom_groups:
     - 0
     - 1
 
-  # Keep the moving mocap person visible to RGB/depth/point clouds without
+  # Keep the moving mocap person visible to RGB/lidar/point clouds without
   # allowing its kinematic, effectively infinite-mass body to push over M20.
   person_collision_enabled: false
 
-  # Vertical field of view for every synthetic depth camera, in degrees.
-  pointcloud_fov_deg: 160.0
+  # Official Airy vertical field of view. Azimuth coverage is always 360 degrees
+  # in airy_hemisphere mode.
+  pointcloud_fov_deg: 90.0
+
+  # Official Airy decoder minimum range.
+  pointcloud_min_range_m: 0.1
 
   # Maximum retained depth hit distance in metres. The office profile uses
   # 10 m so background surfaces behind moving objects can contribute map rays.

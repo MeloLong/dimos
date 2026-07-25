@@ -17,6 +17,7 @@
 import base64
 from contextlib import nullcontext
 import json
+import math
 import os
 import pickle
 import signal
@@ -76,6 +77,30 @@ def _camera_id(model: mujoco.MjModel, camera_name: str) -> int:
     return camera_id
 
 
+def _hemispherical_ray_directions(
+    azimuth_samples: int,
+    channels: int,
+    vertical_fov_deg: float,
+) -> NDArray[np.float64]:
+    """Generate a 360-degree scan in MuJoCo camera coordinates."""
+    azimuth = np.linspace(-math.pi, math.pi, azimuth_samples, endpoint=False)
+    elevation = np.linspace(
+        -math.radians(vertical_fov_deg) / 2.0,
+        math.radians(vertical_fov_deg) / 2.0,
+        channels,
+    )
+    elevations, azimuths = np.meshgrid(elevation, azimuth, indexing="ij")
+    cos_elevation = np.cos(elevations)
+    return np.stack(
+        (
+            np.sin(azimuths) * cos_elevation,
+            np.sin(elevations),
+            -np.cos(azimuths) * cos_elevation,
+        ),
+        axis=-1,
+    ).reshape(-1, 3)
+
+
 def _run_simulation(
     config: GlobalConfig,
     shm: ShmReader,
@@ -133,15 +158,30 @@ def _run_simulation(
             )
 
         pointcloud_renderers: list[tuple[mujoco.Renderer, int]] = []
+        pointcloud_camera_ids: list[int] = []
+        ray_directions_camera: NDArray[np.float64] | None = None
+        raycast_geom_groups: NDArray[np.uint8] | None = None
         if sensor_config.enable_pointcloud:
-            for camera_name in sensor_config.pointcloud_camera_names:
-                renderer = mujoco.Renderer(
-                    model,
-                    height=sensor_config.pointcloud_height,
-                    width=sensor_config.pointcloud_width,
+            if sensor_config.pointcloud_scan_pattern == "airy_hemisphere":
+                pointcloud_camera_ids = [
+                    _camera_id(model, name) for name in sensor_config.pointcloud_camera_names
+                ]
+                ray_directions_camera = _hemispherical_ray_directions(
+                    sensor_config.pointcloud_width,
+                    sensor_config.pointcloud_height,
+                    sensor_config.pointcloud_fov_deg,
                 )
-                renderer.enable_depth_rendering()
-                pointcloud_renderers.append((renderer, _camera_id(model, camera_name)))
+                raycast_geom_groups = np.zeros(6, dtype=np.uint8)
+                raycast_geom_groups[list(sensor_config.pointcloud_geom_groups)] = 1
+            else:
+                for camera_name in sensor_config.pointcloud_camera_names:
+                    renderer = mujoco.Renderer(
+                        model,
+                        height=sensor_config.pointcloud_height,
+                        width=sensor_config.pointcloud_width,
+                    )
+                    renderer.enable_depth_rendering()
+                    pointcloud_renderers.append((renderer, _camera_id(model, camera_name)))
 
             import open3d as o3d  # type: ignore[import-untyped]
 
@@ -197,7 +237,7 @@ def _run_simulation(
                     last_video_time = current_time
 
                 if (
-                    pointcloud_renderers
+                    sensor_config.enable_pointcloud
                     and current_time - last_pointcloud_time >= pointcloud_interval
                 ):
                     all_points = []
@@ -216,6 +256,36 @@ def _run_simulation(
                         )
                         if points.size > 0:
                             all_points.append(points)
+
+                    if ray_directions_camera is not None and raycast_geom_groups is not None:
+                        for camera_id in pointcloud_camera_ids:
+                            origin = data.cam_xpos[camera_id].copy()
+                            camera_mat = data.cam_xmat[camera_id].reshape(3, 3)
+                            directions_world = ray_directions_camera @ camera_mat.T
+                            ray_count = directions_world.shape[0]
+                            geom_ids = np.full(ray_count, -1, dtype=np.int32)
+                            distances = np.full(ray_count, -1.0, dtype=np.float64)
+                            mujoco.mj_multiRay(  # type: ignore[attr-defined]
+                                model,
+                                data,
+                                origin,
+                                directions_world.ravel(),
+                                raycast_geom_groups,
+                                1,
+                                -1,
+                                geom_ids,
+                                distances,
+                                None,
+                                ray_count,
+                                sensor_config.pointcloud_max_range_m,
+                            )
+                            valid = (distances >= sensor_config.pointcloud_min_range_m) & (
+                                distances <= sensor_config.pointcloud_max_range_m
+                            )
+                            if np.any(valid):
+                                all_points.append(
+                                    origin + directions_world[valid] * distances[valid, None]
+                                )
 
                     if all_points:
                         pcd = o3d.geometry.PointCloud()

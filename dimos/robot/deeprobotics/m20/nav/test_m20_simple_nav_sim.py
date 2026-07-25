@@ -117,8 +117,11 @@ def test_simple_nav_sim_loads_checked_in_sensor_profile() -> None:
         "lidar_front_camera",
         "lidar_rear_camera",
     )
-    assert simulator.kwargs["pointcloud_width"] == 640
-    assert simulator.kwargs["pointcloud_height"] == 48
+    assert simulator.kwargs["pointcloud_scan_pattern"] == "airy_hemisphere"
+    assert simulator.kwargs["pointcloud_width"] == 192
+    assert simulator.kwargs["pointcloud_height"] == 96
+    assert simulator.kwargs["pointcloud_fov_deg"] == 90.0
+    assert simulator.kwargs["pointcloud_min_range_m"] == 0.1
     assert simulator.kwargs["pointcloud_max_range_m"] == 10.0
 
 

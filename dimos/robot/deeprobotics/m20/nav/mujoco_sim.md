@@ -133,13 +133,15 @@ comments in that file document every checked-in parameter.
 | `publish_front_image` | `True` | Publish RGB as `color_image` |
 | `publish_rear_image` | `False` | Duplicate RGB to the rear topic; no rear renderer exists |
 | `width`, `height`, `fps` | `640`, `360`, `10` | Front RGB render size and rate |
-| `enable_pointcloud` | `True` | Run depth renderers and publish the synthetic point cloud |
+| `enable_pointcloud` | `True` | Run synthetic lidar and publish the merged point cloud |
+| `pointcloud_scan_pattern` | `airy_hemisphere` | Use a full-azimuth hemispherical MuJoCo ray pattern |
 | `pointcloud_fps` | `2` | Synthetic point-cloud rate |
-| `pointcloud_width`, `pointcloud_height` | `640`, `48` | Horizontal and vertical depth samples for each synthetic lidar view |
+| `pointcloud_width`, `pointcloud_height` | `192`, `96` | Reduced azimuth samples and Airy vertical channels per lidar |
+| `pointcloud_min_range_m` | `0.1` | Official Airy decoder minimum range |
 | `pointcloud_max_range_m` | `10` | Maximum retained depth hit distance for the office scene |
-| `pointcloud_camera_names` | front, rear | MuJoCo cameras used for point-cloud generation |
-| `pointcloud_geom_groups` | `[0, 1]` | MuJoCo geometry groups visible to point-cloud cameras |
-| `pointcloud_fov_deg` | `160` | Depth projection field of view |
+| `pointcloud_camera_names` | front, rear | MuJoCo mount frames used as ray origins |
+| `pointcloud_geom_groups` | `[0, 1]` | MuJoCo geometry groups visible to lidar rays |
+| `pointcloud_fov_deg` | `90` | Official Airy vertical FOV; azimuth is 360 degrees |
 | `pointcloud_voxel_size` | `0.05` | Open3D downsampling resolution in metres |
 
 The `mlsplannernative` section keeps the planner envelope consistent with the
@@ -155,17 +157,24 @@ The real `m20-dan-nav` blueprint continues to use its separate M20 envelope
 planner cost, and controller parameters are intentionally shared for now.
 
 The generic defaults preserve the legacy G1/Go2 visible groups `(0, 1, 2)`.
-The M20 profile limits point-cloud rendering to groups `(0, 1)`. The imported
+The M20 profile limits lidar raycasts to groups `(0, 1)`. The imported
 M20 visual geometry is in group `2` and its collision geometry is rendered in
-group `3`, so neither is scanned by the synthetic depth cameras. Including
+group `3`, so neither is scanned by the synthetic lidars. Including
 either group makes MLS inflate robot points into an obstacle around its own
 start pose. Keep `publish_rear_image=false` unless duplicate front data is
 intentionally required.
 
-These depth images are synthetic perspective projections, not calibrated
-physical lidar scans. `pointcloud_height=48` reduces the vertical sampling to
-approximate 48 channels, but it does not reproduce the real sensor's beam
-angles, rotation/timing, noise, blind zones, or motion distortion.
+The Airy profile is based on RoboSense's
+[official 360 x 90-degree product specification](https://www.robosense.ai/en/IncrementalComponents/Airy)
+and
+[official decoder](https://github.com/RoboSense-LiDAR/rs_driver/blob/897b14d3bdb6186a75df27ba51b65b5bd5557723/src/rs_driver/driver/decoder/decoder_RSAIRY.hpp).
+The driver confirms 48/96/192 modes, defaults to 96 channels, accepts distances
+from 0.1 to 60 m at 0.005 m resolution, and loads 96 vertical plus 96 horizontal
+calibration angles from DIFOP. No official Airy MuJoCo/Gazebo configuration or
+M20 mounting transforms are published. The simulator therefore uses uniform
+elevation and azimuth samples, limits range to 10 m, and publishes at 2 Hz. It
+does not reproduce factory beam calibration, full point rate, scan timing,
+noise, blind zones, occlusion, or motion distortion.
 
 The checked-in default profile uses YAML so it can carry comments. An alternate
 runtime config selected with `--config` still uses the DimOS JSON config format,

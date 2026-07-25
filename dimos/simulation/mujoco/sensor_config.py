@@ -14,9 +14,9 @@
 
 """Validated sensor settings for the legacy Unitree MuJoCo connection."""
 
-from typing import Annotated
+from typing import Annotated, Literal
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from dimos.protocol.service.spec import BaseConfig
 from dimos.simulation.mujoco.constants import (
@@ -24,6 +24,7 @@ from dimos.simulation.mujoco.constants import (
     LIDAR_FPS,
     LIDAR_RESOLUTION,
     MAX_RANGE,
+    MIN_RANGE,
     VIDEO_CAMERA_FOV,
     VIDEO_FPS,
     VIDEO_HEIGHT,
@@ -43,6 +44,7 @@ class MujocoSensorConfig(BaseConfig):
     color_fov_deg: float = Field(default=VIDEO_CAMERA_FOV, gt=0, lt=180)
 
     enable_pointcloud: bool = True
+    pointcloud_scan_pattern: Literal["perspective", "airy_hemisphere"] = "perspective"
     pointcloud_fps: float = Field(default=LIDAR_FPS, gt=0)
     pointcloud_width: int = Field(default=VIDEO_WIDTH, gt=0)
     pointcloud_height: int = Field(default=VIDEO_HEIGHT, gt=0)
@@ -51,8 +53,15 @@ class MujocoSensorConfig(BaseConfig):
         min_length=1,
     )
     pointcloud_fov_deg: float = Field(default=DEPTH_CAMERA_FOV, gt=0, lt=180)
+    pointcloud_min_range_m: float = Field(default=MIN_RANGE, gt=0)
     pointcloud_max_range_m: float = Field(default=MAX_RANGE, gt=0)
     pointcloud_voxel_size: float = Field(default=LIDAR_RESOLUTION, gt=0)
     pointcloud_geom_groups: tuple[Annotated[int, Field(ge=0, le=5)], ...] = Field(
         default=(0, 1, 2), min_length=1
     )
+
+    @model_validator(mode="after")
+    def validate_pointcloud_range(self) -> "MujocoSensorConfig":
+        if self.pointcloud_min_range_m >= self.pointcloud_max_range_m:
+            raise ValueError("pointcloud_min_range_m must be less than pointcloud_max_range_m")
+        return self
