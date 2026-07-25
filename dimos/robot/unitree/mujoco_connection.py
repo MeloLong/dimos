@@ -260,7 +260,7 @@ class MujocoConnection:
         return True
 
     def stop_movement(self) -> None:
-        # Simulation already enforces the cmd_vel timeout.
+        # No WebRTC deadman timer exists in simulation; cmd_vel timeout covers it.
         pass
 
     def set_obstacle_avoidance(self, enabled: bool = True) -> bool:
@@ -268,9 +268,6 @@ class MujocoConnection:
 
     def set_motion_mode(self, name: str) -> None:
         pass
-
-    def enable_rage_mode(self) -> bool:
-        return True
 
     def set_rage_mode(self, enable: bool) -> bool:
         return True
