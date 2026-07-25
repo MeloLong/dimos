@@ -137,8 +137,8 @@ def _run_simulation(
             for camera_name in sensor_config.pointcloud_camera_names:
                 renderer = mujoco.Renderer(
                     model,
-                    height=sensor_config.height,
-                    width=sensor_config.width,
+                    height=sensor_config.pointcloud_height,
+                    width=sensor_config.pointcloud_width,
                 )
                 renderer.enable_depth_rendering()
                 pointcloud_renderers.append((renderer, _camera_id(model, camera_name)))

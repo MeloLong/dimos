@@ -111,6 +111,14 @@ def test_simple_nav_sim_loads_checked_in_sensor_profile() -> None:
 
     assert simulator.kwargs == expected
     assert simulator.kwargs["person_collision_enabled"] is False
+    assert simulator.kwargs["publish_front_image"] is True
+    assert simulator.kwargs["publish_rear_image"] is False
+    assert simulator.kwargs["pointcloud_camera_names"] == (
+        "lidar_front_camera",
+        "lidar_rear_camera",
+    )
+    assert simulator.kwargs["pointcloud_width"] == 640
+    assert simulator.kwargs["pointcloud_height"] == 48
     assert simulator.kwargs["pointcloud_max_range_m"] == 10.0
 
 

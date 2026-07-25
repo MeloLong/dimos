@@ -132,11 +132,12 @@ comments in that file document every checked-in parameter.
 | `enable_color` | `True` | Create and run the RGB renderer |
 | `publish_front_image` | `True` | Publish RGB as `color_image` |
 | `publish_rear_image` | `False` | Duplicate RGB to the rear topic; no rear renderer exists |
-| `width`, `height`, `fps` | `640`, `360`, `10` | RGB/depth render size and RGB rate |
+| `width`, `height`, `fps` | `640`, `360`, `10` | Front RGB render size and rate |
 | `enable_pointcloud` | `True` | Run depth renderers and publish the synthetic point cloud |
 | `pointcloud_fps` | `2` | Synthetic point-cloud rate |
+| `pointcloud_width`, `pointcloud_height` | `640`, `48` | Horizontal and vertical depth samples for each synthetic lidar view |
 | `pointcloud_max_range_m` | `10` | Maximum retained depth hit distance for the office scene |
-| `pointcloud_camera_names` | front, left, right | MuJoCo cameras used for point-cloud generation |
+| `pointcloud_camera_names` | front, rear | MuJoCo cameras used for point-cloud generation |
 | `pointcloud_geom_groups` | `[0, 1]` | MuJoCo geometry groups visible to point-cloud cameras |
 | `pointcloud_fov_deg` | `160` | Depth projection field of view |
 | `pointcloud_voxel_size` | `0.05` | Open3D downsampling resolution in metres |
@@ -160,6 +161,11 @@ group `3`, so neither is scanned by the synthetic depth cameras. Including
 either group makes MLS inflate robot points into an obstacle around its own
 start pose. Keep `publish_rear_image=false` unless duplicate front data is
 intentionally required.
+
+These depth images are synthetic perspective projections, not calibrated
+physical lidar scans. `pointcloud_height=48` reduces the vertical sampling to
+approximate 48 channels, but it does not reproduce the real sensor's beam
+angles, rotation/timing, noise, blind zones, or motion distortion.
 
 The checked-in default profile uses YAML so it can carry comments. An alternate
 runtime config selected with `--config` still uses the DimOS JSON config format,

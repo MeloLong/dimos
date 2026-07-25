@@ -53,6 +53,7 @@
             <site name="base_site" pos="0 0 0" quat="1 0 0 0"/>
             <camera name="head_camera" pos="0.40 0 0.06" xyaxes="0 -1 0 0 0 1" mode="fixed"/>
             <camera name="lidar_front_camera" pos="0.40 0 0.05" xyaxes="0 -1 0 0 0 1" mode="fixed" fovy="160"/>
+            <camera name="lidar_rear_camera" pos="-0.40 0 0.05" xyaxes="0 1 0 0 0 1" mode="fixed" fovy="160"/>
             <camera name="lidar_left_camera" pos="0 0.20 0.05" xyaxes="1 0 0 0 0 1" mode="fixed" fovy="160"/>
             <camera name="lidar_right_camera" pos="0 -0.20 0.05" xyaxes="-1 0 0 0 0 1" mode="fixed" fovy="160"/>
 

@@ -11,10 +11,10 @@ m20mujocosimconnection:
   # Frame ID attached to published RGB camera metadata.
   color_frame_id: camera_optical
 
-  # Horizontal pixel count shared by RGB and depth renderers.
+  # Horizontal pixel count for the front RGB renderer.
   width: 640
 
-  # Vertical pixel count shared by RGB and depth renderers.
+  # Vertical pixel count for the front RGB renderer.
   height: 360
 
   # RGB publication rate in frames per second. Point clouds use pointcloud_fps instead.
@@ -35,11 +35,17 @@ m20mujocosimconnection:
   # Synthetic point-cloud publication rate in frames per second.
   pointcloud_fps: 2.0
 
-  # MuJoCo depth cameras combined into one robot-centric point cloud.
+  # Horizontal samples rendered for each synthetic lidar view.
+  pointcloud_width: 640
+
+  # Vertical depth samples per view. This approximates a 48-line lidar but does
+  # not reproduce a calibrated physical scan pattern or timing model.
+  pointcloud_height: 48
+
+  # Front and rear MuJoCo depth cameras combined into one robot-centric point cloud.
   pointcloud_camera_names:
     - lidar_front_camera # Forward-facing depth camera.
-    - lidar_left_camera  # Left-facing depth camera.
-    - lidar_right_camera # Right-facing depth camera.
+    - lidar_rear_camera  # Rear-facing depth camera.
 
   # MuJoCo geometry groups visible to depth cameras. Groups 2 and 3 are excluded to avoid scanning the robot itself.
   pointcloud_geom_groups:

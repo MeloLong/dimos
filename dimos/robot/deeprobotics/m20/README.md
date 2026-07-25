@@ -35,6 +35,11 @@ The asset inventory and DimOS-specific changes are recorded in
 [SOURCE.md](/dimos/robot/deeprobotics/m20/assets/SOURCE.md). Do not replace
 the assets with an unverified third-party model or a Unitree policy.
 
+The RGB and synthetic depth cameras are DimOS simulation additions. The
+official SDK asset does not specify the physical M20 camera/lidar models,
+intrinsics, scan pattern, timing, or calibration, so these streams must not be
+treated as hardware-equivalent sensor models.
+
 ## Control-Fidelity Review
 
 **Conclusion:** the simulation matches the official M20 Sim-to-Real SDK's
@@ -85,7 +90,7 @@ the correct policy-level remedy.
 | --- | --- | --- |
 | Official source and policy | Pass | BSD-3-Clause source audited; vendored ONNX is byte-identical to upstream and exposes `obs [1,57] -> actions [1,16]` |
 | Model and controller contract | Pass | `nq=23`, `nv=22`, `nu=16`; joint tree, inertia, limits, torque ranges, mapping, PD gains, and 20 ms policy cadence checked against the official runner |
-| Rendering and synthetic sensors | Pass | Four M20 cameras, RGB render, nonempty point cloud, and no robot self-scan with groups `(0, 1)` |
+| Rendering and synthetic sensors | Pass | Front RGB plus front/rear 48-row synthetic depth, nonempty point cloud, and no robot self-scan with groups `(0, 1)` |
 | DimOS integration | Pass | Focused suite: 36 tests; obstacle suite: 15 tests plus explicit MuJoCo check; simple-nav and DAN blueprints completed bounded starts |
 | Packaging and docs | Pass | Wheel contains 21 M20 assets; pre-commit, LFS, large-file, and doclinks checks passed |
 | Standstill and forward | Pass | Zero command remains upright; `[0.2,0,0]` for 3 s moves `+0.4884 m` forward with `-0.0018 m` lateral drift |
@@ -185,11 +190,12 @@ executable is a DimOS environment issue, not an M20 asset issue.
 4. MuJoCo RGB/depth cameras publish `color_image` and
    `dimos/slam_aligned_points` for mapping and navigation.
 
-The model provides `head_camera` for RGB plus `lidar_front_camera`,
-`lidar_left_camera`, and `lidar_right_camera` for synthetic depth. Visual
-geometry is in MuJoCo group `2` and collision geometry in group `3`; the
-default point-cloud profile renders groups `(0, 1)` so the robot is not
-inserted into its own map.
+The DimOS adapter adds `head_camera` for front RGB and uses
+`lidar_front_camera` plus `lidar_rear_camera` for active synthetic depth. The
+legacy left/right depth cameras remain in the MJCF but are not rendered by the
+default profile. Visual geometry is in MuJoCo group `2` and collision geometry
+in group `3`; the default point-cloud profile renders groups `(0, 1)` so the
+robot is not inserted into its own map.
 
 ## Model And Policy Contract
 
@@ -221,9 +227,12 @@ uv run --no-sync dimos --rerun-open none run m20-simple-nav-sim \
   --option m20movingobstacle.enabled=false
 ```
 
-The normal profile publishes 640 x 360 RGB at 10 Hz and a merged front/left/
-right point cloud at 2 Hz. The mocap person is visible to cameras but does not
-collide with M20 by default.
+The normal profile publishes only front 640 x 360 RGB at 10 Hz and a merged
+front/rear point cloud at 2 Hz. Each synthetic depth view uses 640 horizontal
+samples, 48 vertical rows, and a 10 m range. The 48 rows approximate reduced
+vertical lidar channels; they do not reproduce a calibrated physical 48-line
+scan pattern or prove equivalence to the real M20 sensors. The mocap person is
+visible to cameras but does not collide with M20 by default.
 
 ## Verification Checklist
 

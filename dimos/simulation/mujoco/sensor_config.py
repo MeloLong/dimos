@@ -44,6 +44,8 @@ class MujocoSensorConfig(BaseConfig):
 
     enable_pointcloud: bool = True
     pointcloud_fps: float = Field(default=LIDAR_FPS, gt=0)
+    pointcloud_width: int = Field(default=VIDEO_WIDTH, gt=0)
+    pointcloud_height: int = Field(default=VIDEO_HEIGHT, gt=0)
     pointcloud_camera_names: tuple[str, ...] = Field(
         default=("lidar_front_camera", "lidar_left_camera", "lidar_right_camera"),
         min_length=1,

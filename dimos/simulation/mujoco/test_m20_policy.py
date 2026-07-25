@@ -69,10 +69,23 @@ def test_official_m20_model_contract() -> None:
     for name in (
         "head_camera",
         "lidar_front_camera",
+        "lidar_rear_camera",
         "lidar_left_camera",
         "lidar_right_camera",
     ):
         assert model.camera(name).id >= 0
+
+
+def test_m20_front_and_rear_depth_cameras_face_opposite_directions() -> None:
+    model, data = _load_model()
+    front_id = model.camera("lidar_front_camera").id
+    rear_id = model.camera("lidar_rear_camera").id
+
+    front_view = -data.cam_xmat[front_id].reshape(3, 3)[:, 2]
+    rear_view = -data.cam_xmat[rear_id].reshape(3, 3)[:, 2]
+
+    np.testing.assert_allclose(front_view, [1.0, 0.0, 0.0], atol=1e-7)
+    np.testing.assert_allclose(rear_view, [-1.0, 0.0, 0.0], atol=1e-7)
 
 
 def test_m20_policy_observation_and_output_contract() -> None:

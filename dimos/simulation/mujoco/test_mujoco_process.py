@@ -31,6 +31,8 @@ def test_display_allows_mujoco_viewer(monkeypatch) -> None:
         ("height", -1),
         ("fps", 0),
         ("pointcloud_fps", 0),
+        ("pointcloud_width", 0),
+        ("pointcloud_height", -1),
         ("pointcloud_max_range_m", 0),
         ("pointcloud_voxel_size", 0),
     ],
@@ -48,6 +50,18 @@ def test_sensor_config_rejects_invalid_pointcloud_geom_groups(groups) -> None:
 
 def test_sensor_config_keeps_legacy_mujoco_visible_groups_by_default() -> None:
     assert MujocoSensorConfig().pointcloud_geom_groups == (0, 1, 2)
+
+
+def test_pointcloud_render_shape_is_independent_from_rgb() -> None:
+    config = MujocoSensorConfig(
+        width=640,
+        height=360,
+        pointcloud_width=640,
+        pointcloud_height=48,
+    )
+
+    assert (config.width, config.height) == (640, 360)
+    assert (config.pointcloud_width, config.pointcloud_height) == (640, 48)
 
 
 def test_depth_point_filter_uses_configured_max_range() -> None:
