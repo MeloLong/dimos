@@ -1,7 +1,11 @@
 # M20 Navigation MuJoCo Test
 
-The Go1-backed MuJoCo adapter can exercise two M20 navigation chains without
-opening a MuJoCo window:
+For installation, official asset provenance, controller contracts, and the
+full integration workflow, read [the English M20 integration README](/dimos/robot/deeprobotics/m20/README.md).
+The [Chinese README](/dimos/robot/deeprobotics/m20/README.zh-CN.md) covers the same workflow.
+
+The official DeepRobotics M20 MuJoCo model and locomotion policy can exercise
+two M20 navigation chains without opening a MuJoCo window:
 
 | Blueprint | Command | Planning and tracking chain |
 | --- | --- | --- |
@@ -26,9 +30,10 @@ dimos --rerun-open none run m20-simple-nav-sim
 The simulator publishes `dimos/slam_odom` and
 `dimos/slam_aligned_points`, while `MovementManager` routes planner
 `nav_cmd_vel` to MuJoCo through `cmd_vel`. The blueprint uses the checked-in
-Go1 envelope from `mujoco_sim.yaml`: 0.50 m height and 0.45 m radial
-clearance, resulting in a 0.90 m A* robot width and rotation diameter. It is a
-planning/control integration test, not an M20 dynamics validation.
+M20 model envelope from `mujoco_sim.yaml`: 0.70 m height and 0.50 m radial
+clearance, resulting in a 1.00 m A* robot width and rotation diameter. This
+validates the published M20 MJCF and ONNX control contract, but it does not
+replace real-hardware validation of payloads, sensors, traction, or safety limits.
 
 ## Recording And Replay
 
@@ -83,7 +88,7 @@ The simulation also enables one person-shaped moving obstacle. It reuses the
 existing MuJoCo mocap person and `/person_pose` transport, so the obstacle is
 visible to RGB and synthetic point clouds. Physical contact is disabled by
 default because a prescribed mocap body has effectively infinite mass and can
-push over the Go1 instead of testing perception and replanning. A fixed random
+push over the M20 instead of testing perception and replanning. A fixed random
 seed chooses between adjacent edges of an office path already used by the
 MuJoCo person-follow tests. Disable the obstacle with
 `--option m20movingobstacle.enabled=false` when comparing against a static map.
@@ -107,11 +112,11 @@ The simulator publishes M20-compatible `slam_odom` and `slam_aligned_points`
 topics and consumes `cmd_vel`. The front RGB stream is enabled for simulation
 inspection, while the rear image topic remains disabled because the legacy
 simulator has no rear camera and would only duplicate the front frame. The
-simulator uses the existing Unitree Go1 model and Go1 ONNX policy as a
-navigation data source. It does not validate DeepRobotics M20 dynamics,
-actuators, gait control, or physical limits.
+simulator uses the official DeepRobotics M20 MJCF and 57-input/16-output ONNX
+policy from `DeepRoboticsLab/sdk_deploy`. The model is a 16-DOF wheel-legged
+quadruped; source and license details are recorded in the asset directory.
 
-Simulation sensor settings and the Go1 MLS planning envelope are validated
+Simulation sensor settings and the M20 MLS planning envelope are validated
 module parameters. The checked-in default profile is:
 
 ```text
@@ -137,21 +142,22 @@ comments in that file document every checked-in parameter.
 | `pointcloud_voxel_size` | `0.05` | Open3D downsampling resolution in metres |
 
 The `mlsplannernative` section keeps the planner envelope consistent with the
-actual Go1 MJCF used by this simulation:
+official M20 MJCF used by this simulation:
 
 | Parameter | Value | Basis |
 | --- | --- | --- |
-| `robot_height` | `0.50 m` | Go1 visual height is about 0.373 m in the nominal standing pose, plus vertical margin |
-| `wall_clearance_m` | `0.45 m` | Go1 maximum nominal horizontal radius is about 0.399 m, plus lateral margin |
+| `robot_height` | `0.70 m` | M20 standing model height plus vertical margin |
+| `wall_clearance_m` | `0.50 m` | M20 body and wheel radius plus lateral margin |
 
 The real `m20-dan-nav` blueprint continues to use its separate M20 envelope
 (`1.00 m` height and `0.55 m` hard wall clearance). The remaining mapping,
 planner cost, and controller parameters are intentionally shared for now.
 
 The generic defaults preserve the legacy G1/Go2 visible groups `(0, 1, 2)`.
-The M20 profile limits point-cloud rendering to groups `(0, 1)` because the
-Go1 visual model is in group `2`. Including group `2` scans the simulated robot
-itself, and MLS then inflates those points into an obstacle around its own
+The M20 profile limits point-cloud rendering to groups `(0, 1)`. The imported
+M20 visual geometry is in group `2` and its collision geometry is rendered in
+group `3`, so neither is scanned by the synthetic depth cameras. Including
+either group makes MLS inflate robot points into an obstacle around its own
 start pose. Keep `publish_rear_image=false` unless duplicate front data is
 intentionally required.
 

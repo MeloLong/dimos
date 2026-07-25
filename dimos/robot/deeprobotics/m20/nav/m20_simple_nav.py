@@ -84,7 +84,7 @@ def _load_m20_mujoco_sim_config() -> tuple[
 (
     M20_MUJOCO_SIM_CONFIG,
     M20_MOVING_OBSTACLE_CONFIG,
-    GO1_MUJOCO_ENVELOPE,
+    M20_MUJOCO_ENVELOPE,
     M20_SIM_PLANNER_CONFIG,
 ) = _load_m20_mujoco_sim_config()
 
@@ -141,11 +141,10 @@ m20_simple_nav = autoconnect(
 ).global_config(n_workers=10, robot_model="m20")
 
 
-# The legacy MuJoCo world uses a Unitree Go1 model. Keep its planning envelope
-# separate from the M20 real-robot values above while preserving the same A*
-# planning, path smoothing, and LocalPlanner trajectory-generation chain.
-_go1_sim_clearance = GO1_MUJOCO_ENVELOPE["wall_clearance_m"]
-_go1_sim_height = GO1_MUJOCO_ENVELOPE["robot_height"]
+# Keep the official MuJoCo model envelope separate from the complete real-robot
+# envelope, which also accounts for onboard sensor hardware.
+_m20_sim_clearance = M20_MUJOCO_ENVELOPE["wall_clearance_m"]
+_m20_sim_height = M20_MUJOCO_ENVELOPE["robot_height"]
 
 m20_simple_nav_sim = autoconnect(
     rerun,
@@ -153,18 +152,18 @@ m20_simple_nav_sim = autoconnect(
     CostMapper.blueprint(
         config=HeightCostConfig(
             resolution=voxel_size,
-            can_pass_under=_go1_sim_height,
+            can_pass_under=_m20_sim_height,
             can_climb=m20_max_step_height,
             ignore_noise=0.08,
             smoothing=1.5,
             min_gradient_neighbors=2,
             ignore_overhead_only=True,
         ),
-        initial_safe_radius_meters=_go1_sim_clearance,
+        initial_safe_radius_meters=_m20_sim_clearance,
     ),
     ReplanningAStarPlanner.blueprint(
-        robot_width=_go1_sim_clearance * 2,
-        robot_rotation_diameter=_go1_sim_clearance * 2,
+        robot_width=_m20_sim_clearance * 2,
+        robot_rotation_diameter=_m20_sim_clearance * 2,
         **M20_SIM_PLANNER_CONFIG,
     ).remappings([(ReplanningAStarPlanner, "odometry", "dimos/slam_odom")]),
     MovementManager.blueprint(),
@@ -180,8 +179,8 @@ m20_simple_nav_sim = autoconnect(
     M20TF.blueprint().remappings([(M20TF, "odometry", "dimos/slam_odom")]),
 ).global_config(
     n_workers=11,
-    robot_model="unitree_go1",
-    robot_width=_go1_sim_clearance * 2,
-    robot_rotation_diameter=_go1_sim_clearance * 2,
+    robot_model="deeprobotics_m20",
+    robot_width=_m20_sim_clearance * 2,
+    robot_rotation_diameter=_m20_sim_clearance * 2,
     simulation="mujoco",
 )

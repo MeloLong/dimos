@@ -27,12 +27,21 @@ from dimos.core.global_config import GlobalConfig
 from dimos.mapping.occupancy.extrude_occupancy import generate_mujoco_scene
 from dimos.msgs.nav_msgs.OccupancyGrid import OccupancyGrid
 from dimos.simulation.mujoco.input_controller import InputController
-from dimos.simulation.mujoco.policy import G1OnnxController, Go1OnnxController, OnnxController
+from dimos.simulation.mujoco.policy import (
+    G1OnnxController,
+    Go1OnnxController,
+    M20OnnxController,
+    OnnxController,
+)
 from dimos.utils.data import get_data
 
 
 def _get_data_dir() -> epath.Path:
     return epath.Path(str(get_data("mujoco_sim")))
+
+
+def _get_m20_asset_dir() -> epath.Path:
+    return epath.Path(str(Path(__file__).resolve().parents[2] / "robot/deeprobotics/m20/assets"))
 
 
 def get_assets() -> dict[str, bytes]:
@@ -48,6 +57,9 @@ def get_assets() -> dict[str, bytes]:
     mjx_env.update_assets(assets, data_dir / "scene_office1/office_split", "*.obj")
     mjx_env.update_assets(assets, mjx_env.MENAGERIE_PATH / "unitree_go1" / "assets")
     mjx_env.update_assets(assets, mjx_env.MENAGERIE_PATH / "unitree_g1" / "assets")
+    mjx_env.update_assets(assets, _get_m20_asset_dir(), "*.xml")
+    for mesh_path in (_get_m20_asset_dir() / "meshes").glob("*.STL"):
+        assets[f"meshes/{mesh_path.name}"] = mesh_path.read_bytes()
 
     # From: https://sketchfab.com/3d-models/jeong-seun-34-42956ca979404a038b8e0d3e496160fd
     person_dir = epath.Path(str(get_data("person")))
@@ -79,6 +91,8 @@ def load_model(
     match robot:
         case "unitree_g1":
             sim_dt = 0.002
+        case "deeprobotics_m20":
+            sim_dt = 0.001
         case _:
             sim_dt = 0.005
 
@@ -87,7 +101,11 @@ def load_model(
     model.opt.timestep = sim_dt
 
     params = {
-        "policy_path": (_get_data_dir() / f"{robot}_policy.onnx").as_posix(),
+        "policy_path": (
+            _get_m20_asset_dir() / "deeprobotics_m20_policy.onnx"
+            if robot == "deeprobotics_m20"
+            else _get_data_dir() / f"{robot}_policy.onnx"
+        ).as_posix(),
         "default_angles": np.array(model.keyframe("home").qpos[7:]),
         "n_substeps": n_substeps,
         "action_scale": 0.5,
@@ -100,6 +118,8 @@ def load_model(
             policy: OnnxController = Go1OnnxController(**params)
         case "unitree_g1":
             policy = G1OnnxController(**params, drift_compensation=[-0.18, 0.0, -0.09])
+        case "deeprobotics_m20":
+            policy = M20OnnxController(**params)
         case _:
             raise ValueError(f"Unknown robot policy: {robot}")
 

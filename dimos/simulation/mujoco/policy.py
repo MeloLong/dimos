@@ -98,6 +98,84 @@ class Go1OnnxController(OnnxController):
         return obs.astype(np.float32)
 
 
+class M20OnnxController(OnnxController):
+    """DeepRobotics M20 hybrid leg-position and wheel-velocity controller."""
+
+    _POLICY_TO_ROBOT = np.array([0, 1, 2, 4, 5, 6, 8, 9, 10, 12, 13, 14, 3, 7, 11, 15])
+    _ACTION_SCALE_ROBOT = np.tile([0.125, 0.25, 0.25, 5.0], 4)
+    _KP_ROBOT = np.tile([80.0, 80.0, 80.0, 0.0], 4)
+    _KD_ROBOT = np.tile([2.0, 2.0, 2.0, 0.6], 4)
+
+    def __init__(
+        self,
+        policy_path: str,
+        default_angles: np.ndarray[Any, Any],
+        ctrl_dt: float,
+        n_substeps: int,
+        action_scale: float,
+        input_controller: InputController,
+        drift_compensation: list[float] | None = None,
+    ) -> None:
+        if default_angles.shape != (16,):
+            raise ValueError(f"M20 policy requires 16 joints, got {default_angles.shape}")
+        super().__init__(
+            policy_path,
+            default_angles,
+            n_substeps,
+            action_scale,
+            input_controller,
+            ctrl_dt,
+            drift_compensation,
+        )
+        self._output_names = ["actions"]
+        self._default_policy_angles = default_angles[self._POLICY_TO_ROBOT]
+        self._target_position = default_angles.copy()
+        self._target_velocity = np.zeros(16, dtype=np.float32)
+
+    def get_obs(self, model: mujoco.MjModel, data: mujoco.MjData) -> np.ndarray[Any, Any]:
+        gyro = data.sensor("gyro").data * 0.25
+        imu_xmat = data.site_xmat[model.site("imu_site").id].reshape(3, 3)
+        gravity = imu_xmat.T @ np.array([0.0, 0.0, -1.0])
+        command = self._input_controller.get_command()
+
+        joint_angles = data.qpos[7:][self._POLICY_TO_ROBOT].copy()
+        joint_angles[12:] = 0.0
+        joint_angles -= self._default_policy_angles
+        joint_velocities = data.qvel[6:][self._POLICY_TO_ROBOT] * 0.05
+
+        return np.hstack(
+            [
+                gyro,
+                gravity,
+                command,
+                joint_angles,
+                joint_velocities,
+                self._last_action,
+            ]
+        ).astype(np.float32)
+
+    def get_control(self, model: mujoco.MjModel, data: mujoco.MjData) -> None:
+        self._counter += 1
+        if self._counter % self._n_substeps == 0:
+            obs = self.get_obs(model, data)
+            policy_action = self._policy.run(self._output_names, {"obs": obs.reshape(1, -1)})[0][0]
+            self._last_action = policy_action.copy()
+
+            robot_action = np.empty(16, dtype=np.float32)
+            robot_action[self._POLICY_TO_ROBOT] = policy_action
+            scaled_action = robot_action * self._ACTION_SCALE_ROBOT
+
+            leg_mask = self._KP_ROBOT > 0
+            self._target_position[leg_mask] = (
+                self._default_angles[leg_mask] + scaled_action[leg_mask]
+            )
+            self._target_velocity[~leg_mask] = scaled_action[~leg_mask]
+
+        data.ctrl[:] = self._KP_ROBOT * (self._target_position - data.qpos[7:]) + (
+            self._KD_ROBOT * (self._target_velocity - data.qvel[6:])
+        )
+
+
 class G1OnnxController(OnnxController):
     def __init__(
         self,

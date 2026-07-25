@@ -1,3 +1,17 @@
+# Copyright 2026 Dimensional Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import yaml
 
 from dimos.mapping.costmapper import CostMapper
@@ -41,14 +55,12 @@ def test_simple_nav_sim_feeds_m20_slam_topics() -> None:
     assert remappings[(M20MovingObstacle, "odometry")] == "dimos/slam_odom"
 
 
-def test_simple_nav_sim_uses_go1_envelope_from_yaml() -> None:
+def test_simple_nav_sim_uses_m20_envelope_from_yaml() -> None:
     payload = yaml.safe_load(M20_MUJOCO_SIM_CONFIG_PATH.read_text(encoding="utf-8"))
     clearance = payload["mlsplannernative"]["wall_clearance_m"]
     height = payload["mlsplannernative"]["robot_height"]
 
-    cost_mapper = next(
-        atom for atom in m20_simple_nav_sim.blueprints if atom.module is CostMapper
-    )
+    cost_mapper = next(atom for atom in m20_simple_nav_sim.blueprints if atom.module is CostMapper)
     planner = next(
         atom for atom in m20_simple_nav_sim.blueprints if atom.module is ReplanningAStarPlanner
     )
@@ -57,7 +69,7 @@ def test_simple_nav_sim_uses_go1_envelope_from_yaml() -> None:
     assert cost_mapper.kwargs["initial_safe_radius_meters"] == clearance
     assert planner.kwargs["robot_width"] == clearance * 2
     assert planner.kwargs["robot_rotation_diameter"] == clearance * 2
-    assert m20_simple_nav_sim.global_config_overrides["robot_model"] == "unitree_go1"
+    assert m20_simple_nav_sim.global_config_overrides["robot_model"] == "deeprobotics_m20"
 
 
 def test_simple_nav_sim_loads_raw_path_debug_switch() -> None:

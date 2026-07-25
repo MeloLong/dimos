@@ -26,9 +26,9 @@ from pydantic import Field
 
 from dimos.core.native_module import NativeModule, NativeModuleConfig
 from dimos.core.stream import Out
+from dimos.msgs.sensor_msgs.CameraInfo import CameraInfo
 from dimos.msgs.sensor_msgs.Image import Image
 from dimos.msgs.sensor_msgs.PointCloud2 import PointCloud2
-from dimos.msgs.sensor_msgs.CameraInfo import CameraInfo
 from dimos.spec import perception
 
 
@@ -41,7 +41,7 @@ class M20LidarConfig(NativeModuleConfig):
     lidar_hz: float = 20.0
     lidar_frame_id: str = "lidar"
 
-    #todo: Add M20 lidar SDK-specific config fields here, such as ports,
+    # todo: Add M20 lidar SDK-specific config fields here, such as ports,
     # device IDs, calibration paths, return mode, or packet format.
 
 
@@ -55,7 +55,7 @@ class M20CameraConfig(NativeModuleConfig):
     camera_info_hz: float = 1.0
     camera_frame_id: str = "camera_optical"
 
-    #todo: Add M20 camera SDK-specific config fields here, such as device ID,
+    # todo: Add M20 camera SDK-specific config fields here, such as device ID,
     # calibration path, exposure mode, pixel format, or stream profile.
 
 

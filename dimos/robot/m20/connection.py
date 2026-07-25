@@ -72,21 +72,21 @@ class M20MockSensorClient:
     """Local fake client used until the real M20 SDK adapter is wired in."""
 
     def connect(self) -> None:
-        #todo: Replace this mock client with a real M20 SDK adapter.
+        # todo: Replace this mock client with a real M20 SDK adapter.
         logger.warning("Using M20MockSensorClient; replace _create_client() with real SDK setup")
 
     def close(self) -> None:
         pass
 
     def read_lidar_frame(self) -> M20LidarFrame:
-        #todo: Return real SDK lidar points as an Nx3 float array, in meters.
+        # todo: Return real SDK lidar points as an Nx3 float array, in meters.
         return M20LidarFrame(
             points=np.zeros((0, 3), dtype=np.float32),
             timestamp=time.time(),
         )
 
     def read_camera_frame(self) -> M20CameraFrame:
-        #todo: Return real SDK camera frames and set the correct RGB/BGR format.
+        # todo: Return real SDK camera frames and set the correct RGB/BGR format.
         return M20CameraFrame(
             image=np.zeros((480, 640, 3), dtype=np.uint8),
             timestamp=time.time(),
@@ -95,12 +95,12 @@ class M20MockSensorClient:
 
 class M20SensorConfig(ModuleConfig):
     ip: str = Field(default_factory=lambda m: m["g"].robot_ip or "192.168.1.20")
-    #todo: Update these frame IDs after the M20 sensor extrinsics are finalized.
+    # todo: Update these frame IDs after the M20 sensor extrinsics are finalized.
     lidar_frame_id: str = "lidar"
     camera_frame_id: str = "camera_optical"
     lidar_hz: float = 20.0
     camera_hz: float = 30.0
-    #todo: Confirm the M20 camera SDK output format before using real images.
+    # todo: Confirm the M20 camera SDK output format before using real images.
     image_format: ImageFormat = ImageFormat.BGR
 
 
@@ -113,7 +113,7 @@ class M20Sensor(Module):
 
     lidar: Out[PointCloud2]
     color_image: Out[Image]
-    #todo: Add camera_info: Out[CameraInfo] once M20 intrinsics are available.
+    # todo: Add camera_info: Out[CameraInfo] once M20 intrinsics are available.
 
     client: M20SensorClient
     _running: bool
@@ -135,7 +135,7 @@ class M20Sensor(Module):
         Replace this method with real M20 SDK initialization, or return a small
         adapter class that wraps the SDK's connect/read/close calls.
         """
-        #todo: Instantiate the real M20 SDK client here, using self.config.ip.
+        # todo: Instantiate the real M20 SDK client here, using self.config.ip.
         return M20MockSensorClient()
 
     @rpc
@@ -203,7 +203,7 @@ class M20Sensor(Module):
         Add lidar post-processing here: unit conversion, coordinate transform,
         crop/filter, deskew, or intensity normalization.
         """
-        #todo: Add M20 lidar post-processing before publishing the point cloud.
+        # todo: Add M20 lidar post-processing before publishing the point cloud.
         points = np.asarray(raw.points, dtype=np.float32)
         if points.ndim != 2 or points.shape[1] != 3:
             raise ValueError(f"M20 lidar points must have shape (N, 3), got {points.shape}")
@@ -225,7 +225,7 @@ class M20Sensor(Module):
         Add image post-processing here: debayering, undistortion, resize,
         color conversion, exposure filtering, or timestamp repair.
         """
-        #todo: Add M20 camera post-processing before publishing the image.
+        # todo: Add M20 camera post-processing before publishing the image.
         frame = np.asarray(raw.image)
         if frame.ndim not in (2, 3):
             raise ValueError(f"M20 camera frame must be HxW or HxWxC, got {frame.shape}")

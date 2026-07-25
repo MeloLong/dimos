@@ -351,6 +351,7 @@ jobs:
     if: |
       !cancelled() &&
       (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) &&
+      hashFiles('dimos/navigation/cmu_nav/modules/**/*.py') != '' &&
       needs.cmu-nav-natives-marker.outputs.cache-hit != 'true'
     needs: cmu-nav-natives-marker
     timeout-minutes: 300

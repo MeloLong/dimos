@@ -1,10 +1,20 @@
 # Issue: Separate M20 Real and Simulation Configuration Profiles
 
-- Status: Open
+- Status: Partially resolved
 - Priority: High
 - Scope: M20 Dan navigation startup and configuration architecture
 - Affected blueprints: `m20-dan-nav`, `m20-dan-nav-sim`
 - Discovered on: 2026-07-14
+
+## Update: 2026-07-25
+
+The simulation-model mismatch described below is resolved on
+`codex/m20-official-mujoco-model`. Both M20 simulation blueprints now select the
+official `DeepRoboticsLab/sdk_deploy` M20 MJCF and matching ONNX policy instead
+of Unitree Go1. The simulation envelope is now 0.70 m high with 0.50 m radial
+clearance, while the real-robot envelope remains separate. The broader
+platform-profile and resolved-configuration logging work in this issue remains
+open. The evidence below is retained as the historical state at discovery.
 
 ## Problem
 

@@ -102,6 +102,8 @@ def _run_simulation(
             z = 0.3
         case "unitree_g1":
             z = 0.8
+        case "deeprobotics_m20":
+            z = 0.58
         case _:
             z = 0
 

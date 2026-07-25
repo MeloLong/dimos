@@ -47,7 +47,7 @@ m20mujocosimconnection:
     - 1
 
   # Keep the moving mocap person visible to RGB/depth/point clouds without
-  # allowing its kinematic, effectively infinite-mass body to push over Go1.
+  # allowing its kinematic, effectively infinite-mass body to push over M20.
   person_collision_enabled: false
 
   # Vertical field of view for every synthetic depth camera, in degrees.
@@ -100,12 +100,12 @@ m20movingobstacle:
     - [0.59, -3.79]
 
 mlsplannernative:
-  # Vertical planning envelope, in metres. Includes margin above the nominal 0.373 m Go1 visual height.
-  robot_height: 0.5
+  # Vertical planning envelope for the official M20 MJCF in its standing pose.
+  robot_height: 0.7
 
   # Hard radial clearance from the robot centre to walls and map edges, in metres.
-  # Includes margin beyond the nominal 0.399 m maximum horizontal Go1 radius.
-  wall_clearance_m: 0.45
+  # Includes margin beyond the M20 body's and wheels' maximum horizontal radius.
+  wall_clearance_m: 0.5
 
 replanningastarplanner:
   # Diagnostic switch: publish raw grid-cell A* output on /raw_path.

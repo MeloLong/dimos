@@ -77,7 +77,7 @@ def _load_m20_mujoco_sim_config() -> tuple[dict[str, Any], dict[str, Any]]:
     )
 
 
-M20_MUJOCO_SIM_CONFIG, GO1_MUJOCO_MLS_CONFIG = _load_m20_mujoco_sim_config()
+M20_MUJOCO_SIM_CONFIG, M20_MUJOCO_MLS_CONFIG = _load_m20_mujoco_sim_config()
 
 _m20_slam_ray_tracer = RayTracingVoxelMap.blueprint(
     voxel_size=voxel_size,
@@ -236,8 +236,8 @@ _m20_dan_nav_core = autoconnect(
 _m20_dan_nav_sim_core = autoconnect(
     _m20_dan_nav_core,
     _mls_planner_blueprint(
-        robot_height=GO1_MUJOCO_MLS_CONFIG["robot_height"],
-        wall_clearance_m=GO1_MUJOCO_MLS_CONFIG["wall_clearance_m"],
+        robot_height=M20_MUJOCO_MLS_CONFIG["robot_height"],
+        wall_clearance_m=M20_MUJOCO_MLS_CONFIG["wall_clearance_m"],
     ),
 )
 
@@ -262,6 +262,6 @@ m20_dan_nav_sim = autoconnect(
     M20TF.blueprint().remappings([(M20TF, "odometry", "dimos/slam_odom")]),
 ).global_config(
     n_workers=11,
-    robot_model="unitree_go1",
+    robot_model="deeprobotics_m20",
     simulation="mujoco",
 )
