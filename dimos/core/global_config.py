@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 import platform
 import re
 from typing import Literal, TypeAlias
@@ -21,7 +22,6 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from dimos.constants import DEFAULT_BUILD_NATIVE
 from dimos.models.vl.types import VlModelName
-from dimos.protocol.pubsub.impl.zenohqos import DEFAULT_ZENOH_QOS, ZenohQoS
 from dimos.visualization.rerun.constants import (
     RERUN_ENABLE_WEB,
     RERUN_OPEN_DEFAULT,
@@ -71,12 +71,12 @@ class GlobalConfig(BaseSettings):
     mujoco_start_pos: str = "-1.0, 1.0"
     mujoco_steps_per_frame: int = 7
     mujoco_person_collision_enabled: bool = True
+    scene_package: str | None = None
     robot_model: str | None = None
     robot_id: str | None = None
     robot_width: float = 0.3
     robot_rotation_diameter: float = 0.6
     nerf_speed: float = 1.0
-    planner_robot_speed: float | None = None
     mcp_port: int = 9990
     # `DIMOS_TRANSPORT` (or `.env`) is the single switch read by every process
     # (dimos, humancli, agentspy, dtop). The `transport` alias keeps the bare
@@ -84,12 +84,6 @@ class GlobalConfig(BaseSettings):
     transport: TransportBackend = Field(
         default_factory=_default_transport,
         validation_alias=AliasChoices("DIMOS_TRANSPORT", "transport"),
-    )
-    # Per-key-expr Zenoh publisher QoS rules; first matching rule wins.
-    # Env override is JSON: DIMOS_ZENOH_QOS='[{"key":"dimos/foo","reliability":"best_effort"}]'
-    zenoh_qos: tuple[ZenohQoS, ...] = Field(
-        default=DEFAULT_ZENOH_QOS,
-        validation_alias=AliasChoices("DIMOS_ZENOH_QOS", "zenoh_qos"),
     )
     # NIC for Zenoh multicast scout beacons (e.g. "eth0"). None lets zenoh
     # auto-select, which can wrongly pick docker0/virtual NICs and break peer
@@ -120,8 +114,9 @@ class GlobalConfig(BaseSettings):
     obstacle_avoidance: bool = True
     detection_model: VlModelName = "moondream"
     listen_host: str = "127.0.0.1"
-    dimsim_scene: str = "apt"
+    dimsim_scene: str = "apartment"
     dimsim_port: int = 8090
+    dimsim_headless: bool = True
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -135,7 +130,7 @@ class GlobalConfig(BaseSettings):
     def update(self, **kwargs: object) -> None:
         """Update config fields in place."""
         for key, value in kwargs.items():
-            if not hasattr(self, key):
+            if key not in type(self).model_fields:
                 raise AttributeError(f"GlobalConfig has no field '{key}'")
             setattr(self, key, value)
 
@@ -157,6 +152,14 @@ class GlobalConfig(BaseSettings):
         if self.mujoco_camera_position is None:
             return (-0.906, 0.008, 1.101, 4.931, 89.749, -46.378)
         return tuple(_get_all_numbers(self.mujoco_camera_position))
+
+    @property
+    def processed_robot_ips(self) -> tuple[str, ...]:
+        ips = [x.strip() for x in (self.robot_ips or "").split(",") if x.strip()]
+        is_running_tests = "PYTEST_CURRENT_TEST" in os.environ
+        if not ips and not is_running_tests:
+            raise ValueError("No robot IPs specified. Must have at least one IP.")
+        return tuple(ips)
 
 
 global_config = GlobalConfig()

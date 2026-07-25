@@ -20,7 +20,6 @@ from typing import Any
 
 import zenoh
 
-from dimos.protocol.pubsub.impl.zenohqos import ZenohQoS
 from dimos.protocol.service.spec import BaseConfig, Service
 from dimos.utils.logging_config import setup_logger
 
@@ -37,9 +36,6 @@ class ZenohConfig(BaseConfig):
     # global_config.zenoh_iface. Needed when auto-select picks the wrong
     # interface (e.g. docker0) and peers fail to discover each other.
     multicast_iface: str | None = None
-    # Per-publisher QoS rules; None = follow global_config.zenoh_qos.
-    # Excluded from session_key: sessions are shared, QoS is per-publisher.
-    qos: tuple[ZenohQoS, ...] | None = None
 
     @property
     def session_key(self) -> str:

@@ -50,35 +50,6 @@ class ImageFormat(Enum):
     DEPTH16 = "DEPTH16"
 
 
-def _format_to_rerun(data: np.ndarray, fmt: ImageFormat) -> Any:
-    """Convert image data to Rerun archetype based on format."""
-    match fmt:
-        case ImageFormat.RGB:
-            return rr.Image(data, color_model="RGB")
-        case ImageFormat.RGBA:
-            return rr.Image(data, color_model="RGBA")
-        case ImageFormat.BGR:
-            return rr.Image(data, color_model="BGR")
-        case ImageFormat.BGRA:
-            return rr.Image(data, color_model="BGRA")
-        case ImageFormat.GRAY:
-            return rr.Image(data, color_model="L")
-        case ImageFormat.GRAY16:
-            return rr.Image(data, color_model="L")
-        case ImageFormat.DEPTH:
-            return rr.DepthImage(data)
-        case ImageFormat.DEPTH16:
-            return rr.DepthImage(data)
-        case _:
-            raise ValueError(f"Unsupported format for Rerun: {fmt}")
-
-
-def _resolve_cv2_interpolation(value: int | None, cv2_name: str, fallback: int) -> int:
-    if value is not None:
-        return value
-    return int(getattr(cv2, cv2_name, fallback))
-
-
 class AgentImageMessage(TypedDict):
     """Type definition for agent-compatible image representation."""
 
@@ -337,11 +308,16 @@ class Image(Timestamped):
         raise ValueError(f"Unsupported format: {self.format}")
 
     def to_rerun(self) -> Any:
-        """Convert to rerun Image format."""
-        return _format_to_rerun(self.data, self.format)
+        """Convert to a Rerun archetype: JPEG-encoded for color images, raw for depth."""
+        match self.format:
+            case ImageFormat.DEPTH | ImageFormat.DEPTH16:
+                return rr.DepthImage(self.data)
+            case ImageFormat.GRAY16:
+                return rr.Image(self.data, color_model="L")
+            case _:
+                return rr.EncodedImage(contents=self.to_jpeg_bytes(), media_type="image/jpeg")
 
-    def resize(self, width: int, height: int, interpolation: int | None = None) -> Image:
-        interpolation = _resolve_cv2_interpolation(interpolation, "INTER_LINEAR", 1)
+    def resize(self, width: int, height: int, interpolation: int = cv2.INTER_LINEAR) -> Image:
         return Image(
             data=cv2.resize(self.data, (width, height), interpolation=interpolation),
             format=self.format,
@@ -350,7 +326,7 @@ class Image(Timestamped):
         )
 
     def resize_to_fit(
-        self, max_width: int, max_height: int, interpolation: int | None = None
+        self, max_width: int, max_height: int, interpolation: int = cv2.INTER_LINEAR
     ) -> tuple[Image, float]:
         """Resize image to fit within max dimensions while preserving aspect ratio.
 

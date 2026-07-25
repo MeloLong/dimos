@@ -50,9 +50,12 @@ def test_real_and_sim_connections_are_isolated() -> None:
 
 
 def test_sim_outputs_feed_wd_slam_topics() -> None:
-    assert m20_dan_nav_sim.remapping_map[(M20MujocoSimConnection, "slam_odom")] == "dimos/slam_odom"
     assert (
-        m20_dan_nav_sim.remapping_map[(M20MujocoSimConnection, "slam_aligned_points")]
+        m20_dan_nav_sim.remapping_map[(M20MujocoSimConnection.name, "slam_odom")]
+        == "dimos/slam_odom"
+    )
+    assert (
+        m20_dan_nav_sim.remapping_map[(M20MujocoSimConnection.name, "slam_aligned_points")]
         == "dimos/slam_aligned_points"
     )
 

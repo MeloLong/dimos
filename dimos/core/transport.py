@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import functools
 import threading
 from typing import (
     TYPE_CHECKING,
@@ -82,19 +83,24 @@ class PubSubTransport(Transport[T]):
     def __init__(self, topic: Any) -> None:
         self.topic = topic
 
-    @classmethod
-    def spec(cls, *args: Any, **kwargs: Any) -> TransportSpec:
-        """Defer construction: capture ctor args for the coordinator to build later."""
-        from dimos.core.coordination.blueprints import TransportSpec
-
-        return TransportSpec(cls, args, kwargs)
-
     def __str__(self) -> str:
         return (
             colors.green(f"{self.__class__.__name__}(")
             + colors.blue(self.topic)
             + colors.green(")")
         )
+
+    @property
+    def channel(self) -> str:
+        """The channel string this transport publishes and subscribes on."""
+        return str(self.topic)
+
+    @classmethod
+    def spec(cls, *args: Any, **kwargs: Any) -> TransportSpec:
+        """Defer construction: capture ctor args for the coordinator to build later."""
+        from dimos.core.coordination.blueprints import TransportSpec
+
+        return TransportSpec(cls, args, kwargs)
 
 
 class pLCMTransport(PubSubTransport[T]):
@@ -191,7 +197,10 @@ class pSHMTransport(PubSubTransport[T]):
         self.shm = PickleSharedMemory(**kwargs)
 
     def __reduce__(self):  # type: ignore[no-untyped-def]
-        return (pSHMTransport, (self.topic,))
+        return (
+            functools.partial(pSHMTransport, default_capacity=self.shm.config.default_capacity),
+            (self.topic,),
+        )
 
     def broadcast(self, _, msg) -> None:  # type: ignore[no-untyped-def]
         if not self._started:
@@ -221,7 +230,10 @@ class SHMTransport(PubSubTransport[T]):
         self.shm = BytesSharedMemory(**kwargs)
 
     def __reduce__(self):  # type: ignore[no-untyped-def]
-        return (SHMTransport, (self.topic,))
+        return (
+            functools.partial(SHMTransport, default_capacity=self.shm.config.default_capacity),
+            (self.topic,),
+        )
 
     def broadcast(self, _, msg) -> None:  # type: ignore[no-untyped-def]
         if not self._started:
@@ -520,17 +532,33 @@ class CloudflareVideoTransport(WebRTCVideoTransport):
 
 
 class ZenohTransport(PubSubTransport[T]):
-    """Zenoh transport with LCM encoding for typed DimosMsg."""
+    """Zenoh transport with LCM encoding for typed DimosMsg.
+
+    Accepts either a plain topic string plus message type, or a full
+    `ZenohTopic` carrying per-topic settings: `ZenohTransport(ZenohTopic("bla",
+    Image, qos=...))`.
+    """
 
     _started: bool = False
 
-    def __init__(self, topic: str, type: type, **kwargs: Any) -> None:
-        super().__init__(LCMTopic(topic, type))
+    def __init__(self, topic: str | ZenohTopic, type: type | None = None, **kwargs: Any) -> None:
+        if isinstance(topic, str):
+            topic = ZenohTopic(topic, type)
+        super().__init__(topic)
         self.zenoh = Zenoh(**kwargs)
         self._start_lock = threading.RLock()
 
+    @property
+    def channel(self) -> str:
+        return cast("str", self.topic.key_expr)
+
+    @property
+    def publish_qos(self) -> dict[str, str] | None:
+        qos = self.topic.qos
+        return qos.to_wire() if qos is not None else None
+
     def __reduce__(self) -> tuple[Any, ...]:
-        return (ZenohTransport, (self.topic.topic, self.topic.lcm_type))
+        return (ZenohTransport, (self.topic,))
 
     def start(self) -> None:
         with self._start_lock:
@@ -558,17 +586,31 @@ class ZenohTransport(PubSubTransport[T]):
 
 
 class pZenohTransport(PubSubTransport[T]):
-    """Zenoh transport with pickle encoding for arbitrary Python objects."""
+    """Zenoh transport with pickle encoding for arbitrary Python objects.
+
+    Accepts either a plain topic string or a full `ZenohTopic` carrying
+    per-topic settings (QoS). `self.topic` stays the plain string.
+    """
 
     _started: bool = False
 
-    def __init__(self, topic: str, **kwargs: Any) -> None:
-        super().__init__(topic)
+    def __init__(self, topic: str | ZenohTopic, **kwargs: Any) -> None:
+        self._zenoh_topic = ZenohTopic(topic) if isinstance(topic, str) else topic
+        super().__init__(self._zenoh_topic.pattern)
         self.zenoh = PickleZenoh(**kwargs)
         self._start_lock = threading.RLock()
 
+    @property
+    def channel(self) -> str:
+        return self._zenoh_topic.key_expr
+
+    @property
+    def publish_qos(self) -> dict[str, str] | None:
+        qos = self._zenoh_topic.qos
+        return qos.to_wire() if qos is not None else None
+
     def __reduce__(self) -> tuple[Any, ...]:
-        return (pZenohTransport, (self.topic,))
+        return (pZenohTransport, (self._zenoh_topic,))
 
     def start(self) -> None:
         with self._start_lock:
@@ -585,11 +627,11 @@ class pZenohTransport(PubSubTransport[T]):
     def broadcast(self, _: Out[T] | None, msg: T) -> None:
         if not self._started:
             self.start()
-        self.zenoh.publish(ZenohTopic(self.topic), msg)
+        self.zenoh.publish(self._zenoh_topic, msg)
 
     def subscribe(
         self, callback: Callable[[T], None], selfstream: Stream[T] | None = None
     ) -> Callable[[], None]:
         if not self._started:
             self.start()
-        return self.zenoh.subscribe(ZenohTopic(self.topic), lambda msg, topic: callback(msg))
+        return self.zenoh.subscribe(self._zenoh_topic, lambda msg, topic: callback(msg))

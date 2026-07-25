@@ -29,6 +29,7 @@ from dimos.robot.manipulators.common.topics import (
     CARTESIAN_IK_TASK_NAME,
     COORDINATOR_FRAME_ID,
     DEFAULT_TRAJECTORY_TASK_NAME,
+    EEF_TWIST_TASK_NAME,
     trajectory_task_name,
 )
 
@@ -61,6 +62,27 @@ def cartesian_ik_task(
         joint_names=hardware.joints,
         priority=priority,
         params={"model_path": model_path, "ee_joint_id": ee_joint_id},
+    )
+
+
+def eef_twist_task(
+    hardware: HardwareComponent,
+    *,
+    model_path: Path,
+    ee_joint_id: int,
+    name: str = EEF_TWIST_TASK_NAME,
+    priority: int = 10,
+    params: dict[str, Any] | None = None,
+) -> TaskConfig:
+    task_params: dict[str, Any] = {"model_path": model_path, "ee_joint_id": ee_joint_id}
+    if params:
+        task_params.update(params)
+    return TaskConfig(
+        name=name,
+        type="eef_twist",
+        joint_names=hardware.joints,
+        priority=priority,
+        params=task_params,
     )
 
 

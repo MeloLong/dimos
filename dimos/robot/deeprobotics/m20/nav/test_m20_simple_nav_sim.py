@@ -48,11 +48,12 @@ def test_simple_nav_real_and_sim_connections_are_isolated() -> None:
 def test_simple_nav_sim_feeds_m20_slam_topics() -> None:
     remappings = m20_simple_nav_sim.remapping_map
 
-    assert remappings[(M20MujocoSimConnection, "slam_odom")] == "dimos/slam_odom"
+    assert remappings[(M20MujocoSimConnection.name, "slam_odom")] == "dimos/slam_odom"
     assert (
-        remappings[(M20MujocoSimConnection, "slam_aligned_points")] == "dimos/slam_aligned_points"
+        remappings[(M20MujocoSimConnection.name, "slam_aligned_points")]
+        == "dimos/slam_aligned_points"
     )
-    assert remappings[(M20MovingObstacle, "odometry")] == "dimos/slam_odom"
+    assert remappings[(M20MovingObstacle.name, "odometry")] == "dimos/slam_odom"
 
 
 def test_simple_nav_sim_uses_m20_envelope_from_yaml() -> None:

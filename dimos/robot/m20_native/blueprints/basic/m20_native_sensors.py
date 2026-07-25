@@ -14,11 +14,12 @@
 # limitations under the License.
 
 from dimos.core.coordination.blueprints import autoconnect
+from dimos.core.global_config import global_config
 from dimos.robot.m20_native.m20_sensors import M20Camera, M20Lidar
 from dimos.visualization.vis_module import vis_module
 
 m20_native_sensors = autoconnect(
     M20Lidar.blueprint(),
     M20Camera.blueprint(),
-    vis_module(),
+    vis_module(global_config.viewer),
 ).global_config(n_workers=3, robot_model="m20")

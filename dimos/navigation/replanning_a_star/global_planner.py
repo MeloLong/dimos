@@ -18,6 +18,7 @@ from threading import Event, RLock, Thread, current_thread
 import time
 
 from dimos_lcm.std_msgs import Bool
+import numpy as np
 from reactivex import Subject
 from reactivex.disposable import CompositeDisposable
 
@@ -492,6 +493,7 @@ class GlobalPlanner(Resource):
             distance = robot_pos.distance(goal)
             navigation_map = self._navigation_map if distance > 1.5 else self._navigation_map_near
             costmap = navigation_map.make_gradient_costmap(size)
+            self._clear_robot_footprint(costmap, navigation_map.binary_costmap, robot_pos)
             path = min_cost_astar(
                 costmap,
                 goal,
@@ -504,6 +506,30 @@ class GlobalPlanner(Resource):
                 return path, costmap
 
         return None
+
+    def _clear_robot_footprint(
+        self, costmap: OccupancyGrid, binary: OccupancyGrid, robot_pos: Vector3
+    ) -> None:
+        """Clear inflated costs under the robot while preserving observed obstacles."""
+        if binary.grid.shape != costmap.grid.shape or binary.origin != costmap.origin:
+            return
+
+        center = costmap.world_to_grid(robot_pos)
+        center_x, center_y = int(center.x), int(center.y)
+        cells = int(self._global_config.robot_rotation_diameter / 2 / costmap.resolution) + 1
+
+        height, width = costmap.grid.shape
+        y0, y1 = max(0, center_y - cells), min(height, center_y + cells + 1)
+        x0, x1 = max(0, center_x - cells), min(width, center_x + cells + 1)
+        if y0 >= y1 or x0 >= x1:
+            return
+
+        region = costmap.grid[y0:y1, x0:x1]
+        binary_region = binary.grid[y0:y1, x0:x1]
+        rows, columns = np.ogrid[y0:y1, x0:x1]
+        disc = (rows - center_y) ** 2 + (columns - center_x) ** 2 <= cells**2
+        clearable = disc & (region >= CostValues.OCCUPIED) & (binary_region < CostValues.OCCUPIED)
+        region[clearable] = CostValues.OCCUPIED - 1
 
     def _find_safe_goal(self, goal: Vector3) -> Vector3 | None:
         costmap = self._navigation_map.binary_costmap
