@@ -49,11 +49,6 @@ exclude = [
     "**/*.svg",
     "**/*.tcss",
     "**/*.pyi",
-    "robot/deeprobotics/m20/assets/*.xml",
-    "robot/deeprobotics/m20/assets/*.onnx",
-    "robot/deeprobotics/m20/assets/*.md",
-    "robot/deeprobotics/m20/assets/LICENSE.DeepRobotics",
-    "robot/deeprobotics/m20/assets/meshes/*.STL",
 ]
 
 [tool.setuptools.exclude-package-data]
@@ -447,6 +442,7 @@ lint = [
     "pytest==8.3.5",
     "python-can>=4",
     "python-socketio>=5.16.1",
+    "roboplan",
     "sounddevice>=0.5.5",
     "trimesh>=4.12",
     "watchdog>=3.0.0",
@@ -665,10 +661,6 @@ ignore = [
     "*/Cargo.lock",
     "dimos/web/dimos_interface/themes.json",
     "dimos/manipulation/manipulation_module.py",
-    "dimos/robot/deeprobotics/m20/assets/deeprobotics_m20_policy.onnx",
-    "dimos/robot/deeprobotics/m20/assets/meshes/*.STL",
     "misc/DimSim/scenes/apartment/objects/manifest.json",
     "misc/DimSim/src/engine.js",
-    "docs/capabilities/navigation/nav_stack_module_guide.md",
-    "docs/capabilities/navigation/nav_stack_module_guide copy.md",
 ]
