@@ -265,6 +265,13 @@ class Config(ModuleConfig):
 Config.model_rebuild(_types_namespace={"Archetype": Archetype, "Blueprint": Blueprint})
 
 
+def _effective_rerun_open(config: Config) -> RerunOpenOption:
+    """Use the global CLI setting unless the blueprint explicitly overrides it."""
+    if "rerun_open" in config.model_fields_set:
+        return config.rerun_open
+    return config.g.rerun_open
+
+
 class RerunBridgeModule(Module):
     """Bridge that logs messages from pubsubs to Rerun.
 
@@ -569,14 +576,14 @@ class RerunBridgeModule(Module):
         parsed = urlparse(connect_url.replace("rerun+", "", 1))
         grpc_port = parsed.port or RERUN_GRPC_PORT
 
-        if self.config.rerun_open not in get_args(RerunOpenOption):
+        rerun_open = _effective_rerun_open(self.config)
+        if rerun_open not in get_args(RerunOpenOption):
             logger.warning(
-                f"rerun_open was {self.config.rerun_open} which is not one of "
-                f"{get_args(RerunOpenOption)}"
+                f"rerun_open was {rerun_open} which is not one of {get_args(RerunOpenOption)}"
             )
 
         spawned = False
-        if self.config.rerun_open in ("native", "both"):
+        if rerun_open in ("native", "both"):
             try:
                 import rerun_bindings
 
@@ -609,7 +616,7 @@ class RerunBridgeModule(Module):
                         exc_info=True,
                     )
 
-        open_web = self.config.rerun_open == "web" or self.config.rerun_open == "both"
+        open_web = rerun_open == "web" or rerun_open == "both"
         if open_web or self.config.rerun_web:
             rr.serve_web_viewer(
                 connect_to=server_uri,
@@ -619,8 +626,8 @@ class RerunBridgeModule(Module):
 
         # TODO: `spawned` is supposed to be false when run on the G1 (because viewer doesn't have a display) somehow it returns true
         if (
-            self.config.rerun_open == "none"
-            or (self.config.rerun_open == "native" and not spawned)
+            rerun_open == "none"
+            or (rerun_open == "native" and not spawned)
             or self.host == "0.0.0.0"
         ):
             self._log_connect_hints(grpc_port)

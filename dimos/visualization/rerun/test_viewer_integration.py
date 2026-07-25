@@ -29,7 +29,7 @@ import shutil
 
 from dimos.core.global_config import GlobalConfig
 from dimos.protocol.pubsub.impl.lcmpubsub import LCM
-from dimos.visualization.rerun.bridge import Config, _resolve_pubsubs
+from dimos.visualization.rerun.bridge import Config, _effective_rerun_open, _resolve_pubsubs
 
 
 class TestViewerBinaryInstallation:
@@ -120,6 +120,16 @@ class TestBridgeSpawnLogic:
             "bridge.py start() has no fallback for missing dimos-viewer. "
             "Users without dimos-viewer will crash."
         )
+
+    def test_global_rerun_open_applies_when_blueprint_omits_it(self):
+        config = Config(g=GlobalConfig(rerun_open="none"))
+
+        assert _effective_rerun_open(config) == "none"
+
+    def test_explicit_blueprint_rerun_open_takes_precedence(self):
+        config = Config(g=GlobalConfig(rerun_open="none"), rerun_open="native")
+
+        assert _effective_rerun_open(config) == "native"
 
 
 class ExplicitPubSubOverride:
