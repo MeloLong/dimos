@@ -136,7 +136,7 @@ comments in that file document every checked-in parameter.
 | `enable_pointcloud` | `True` | Run synthetic lidar and publish the merged point cloud |
 | `pointcloud_scan_pattern` | `airy_hemisphere` | Use a full-azimuth hemispherical MuJoCo ray pattern |
 | `pointcloud_fps` | `2` | Synthetic point-cloud rate |
-| `pointcloud_width`, `pointcloud_height` | `192`, `96` | Reduced azimuth samples and Airy vertical channels per lidar |
+| `pointcloud_width`, `pointcloud_height` | `128`, `96` | Reduced azimuth samples and Airy vertical channels per lidar |
 | `pointcloud_min_range_m` | `0.1` | Official Airy decoder minimum range |
 | `pointcloud_max_range_m` | `10` | Maximum retained depth hit distance for the office scene |
 | `pointcloud_camera_names` | front, rear | MuJoCo mount frames used as ray origins |
@@ -175,6 +175,18 @@ M20 mounting transforms are published. The simulator therefore uses uniform
 elevation and azimuth samples, limits range to 10 m, and publishes at 2 Hz. It
 does not reproduce factory beam calibration, full point rate, scan timing,
 noise, blind zones, occlusion, or motion distortion.
+
+The low-load profile was measured on the same ARM VM with headless EGL MuJoCo
+and the native Rerun viewer using software-rendered `llvmpipe`:
+
+| Profile | Merged points/frame | Lidar receive rate | Front RGB receive rate |
+| --- | ---: | ---: | ---: |
+| 192 x 96 per Airy | 26,000-27,500 | 1.6-2.0 Hz | 7-8 FPS |
+| 128 x 96 per Airy | 19,000-19,700 | 1.77-1.99 Hz | 7.1-8.1 FPS |
+
+The 128-sample profile reduces displayed point volume by roughly 27% while
+preserving 96 vertical channels, front/rear coverage, and successful goal
+navigation. RGB remains limited mainly by the VM's software-rendered viewer.
 
 The checked-in default profile uses YAML so it can carry comments. An alternate
 runtime config selected with `--config` still uses the DimOS JSON config format,

@@ -22,7 +22,7 @@ teleop or nav source into the manager's inputs to drive.
 
 from typing import Any
 
-from dimos.core.coordination.blueprints import autoconnect
+from dimos.core.coordination.blueprints import Blueprint, autoconnect
 from dimos.mapping.ray_tracing.module import RayTracingVoxelMap
 from dimos.navigation.basic_path_follower.module import BasicPathFollower
 from dimos.navigation.movement_manager.movement_manager import MovementManager
@@ -58,6 +58,11 @@ def _smooth_path_for_rerun(msg: Any) -> Any:
     return msg.to_rerun(color=(0, 255, 128), z_offset=0.60, radii=0.05)
 
 
+def _sim_pointcloud_for_rerun(msg: Any) -> Any:
+    """Reduce display-only point density without changing navigation data."""
+    return msg.voxel_downsample(0.10).to_rerun(voxel_size=0.10, mode="points")
+
+
 def m20_rerun_blueprint() -> Any:
     import rerun as rr
     import rerun.blueprint as rrb
@@ -83,52 +88,69 @@ def m20_rerun_blueprint() -> Any:
     )
 
 
-rerun = autoconnect(
-    RerunBridgeModule.blueprint(
-        blueprint=m20_rerun_blueprint,
-        memory_limit="2GB",
-        max_hz={
-            "world/color_image": 20,
-            "world/color_image_rear": 20,
-            "world/global_map": 1.0,
-            "world/local_map": 2.0,
-        },
-        latest_only_entities=[
-            "world/slam_aligned_points",
-            "world/local_map",
-            "world/global_map",
-            "world/global_costmap",
-        ],
-        use_message_timestamps=False,
-        debug_stats=True,
-        debug_stats_interval=5.0,
-        debug_stats_entities=[
-            "world/color_image",
-            "world/color_image_rear",
-            "world/slam_aligned_points",
-            "world/global_map",
-            "world/local_map",
-            Glob("world/**image**"),
-            Glob("world/**map**"),
-            Glob("world/**point**"),
-            Glob("world/**costmap**"),
-        ],
-        debug_low_fps_warn={
-            "world/color_image": 20.0,
-            "world/color_image_rear": 20.0,
-            "world/slam_aligned_points": 9.8,
-            "world/local_map": 4.5,
-            "world/global_map": 0.8,
-        },
-        visual_override={
-            "world/node_edges": _node_edges_on_surface,
-            "world/raw_path": _raw_path_for_rerun,
-            "world/path": _smooth_path_for_rerun,
-        },
-    ),
-    RerunWebSocketServer.blueprint(),
-    WebsocketVisModule.blueprint(),
-)
+def build_m20_rerun(*, simulation: bool = False) -> Blueprint:
+    max_hz = {
+        "world/color_image": 10 if simulation else 20,
+        "world/color_image_rear": 10 if simulation else 20,
+        "world/slam_aligned_points": 2.0 if simulation else 10.0,
+        "world/global_map": 0.2 if simulation else 1.0,
+        "world/local_map": 1.0 if simulation else 2.0,
+    }
+    low_fps_warn = {
+        "world/color_image": 9.0 if simulation else 20.0,
+        "world/color_image_rear": 9.0 if simulation else 20.0,
+        "world/slam_aligned_points": 1.8 if simulation else 9.8,
+        "world/local_map": 0.9 if simulation else 4.5,
+        "world/global_map": 0.18 if simulation else 0.8,
+    }
+    visual_override = {
+        "world/node_edges": _node_edges_on_surface,
+        "world/raw_path": _raw_path_for_rerun,
+        "world/path": _smooth_path_for_rerun,
+    }
+    if simulation:
+        visual_override.update(
+            {
+                "world/slam_aligned_points": _sim_pointcloud_for_rerun,
+                "world/local_map": _sim_pointcloud_for_rerun,
+                "world/global_map": _sim_pointcloud_for_rerun,
+            }
+        )
+
+    return autoconnect(
+        RerunBridgeModule.blueprint(
+            blueprint=m20_rerun_blueprint,
+            memory_limit="2GB",
+            max_hz=max_hz,
+            latest_only_entities=[
+                "world/slam_aligned_points",
+                "world/local_map",
+                "world/global_map",
+                "world/global_costmap",
+            ],
+            use_message_timestamps=False,
+            debug_stats=True,
+            debug_stats_interval=5.0,
+            debug_stats_entities=[
+                "world/color_image",
+                "world/color_image_rear",
+                "world/slam_aligned_points",
+                "world/global_map",
+                "world/local_map",
+                Glob("world/**image**"),
+                Glob("world/**map**"),
+                Glob("world/**point**"),
+                Glob("world/**costmap**"),
+            ],
+            debug_low_fps_warn=low_fps_warn,
+            visual_override=visual_override,
+        ),
+        RerunWebSocketServer.blueprint(),
+        WebsocketVisModule.blueprint(),
+    )
+
+
+rerun = build_m20_rerun()
 
 
 voxel_size = 0.1

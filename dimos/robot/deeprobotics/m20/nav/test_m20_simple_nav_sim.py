@@ -27,6 +27,7 @@ from dimos.robot.deeprobotics.m20.nav.moving_obstacle import (
     M20MovingObstacle,
     M20MovingObstacleConfig,
 )
+from dimos.visualization.rerun.bridge import RerunBridgeModule
 
 
 def _modules(blueprint):
@@ -118,11 +119,25 @@ def test_simple_nav_sim_loads_checked_in_sensor_profile() -> None:
         "lidar_rear_camera",
     )
     assert simulator.kwargs["pointcloud_scan_pattern"] == "airy_hemisphere"
-    assert simulator.kwargs["pointcloud_width"] == 192
+    assert simulator.kwargs["pointcloud_width"] == 128
     assert simulator.kwargs["pointcloud_height"] == 96
     assert simulator.kwargs["pointcloud_fov_deg"] == 90.0
     assert simulator.kwargs["pointcloud_min_range_m"] == 0.1
     assert simulator.kwargs["pointcloud_max_range_m"] == 10.0
+
+
+def test_simple_nav_sim_uses_low_load_rerun_profile() -> None:
+    bridge = next(
+        atom for atom in m20_simple_nav_sim.blueprints if atom.module is RerunBridgeModule
+    )
+
+    assert bridge.kwargs["max_hz"]["world/color_image"] == 10
+    assert bridge.kwargs["max_hz"]["world/slam_aligned_points"] == 2.0
+    assert bridge.kwargs["debug_low_fps_warn"]["world/color_image"] == 9.0
+    assert bridge.kwargs["debug_low_fps_warn"]["world/slam_aligned_points"] == 1.8
+    assert "world/slam_aligned_points" in bridge.kwargs["visual_override"]
+    assert "world/local_map" in bridge.kwargs["visual_override"]
+    assert "world/global_map" in bridge.kwargs["visual_override"]
 
 
 def test_simple_nav_sim_loads_checked_in_moving_obstacle_profile() -> None:
@@ -134,6 +149,7 @@ def test_simple_nav_sim_loads_checked_in_moving_obstacle_profile() -> None:
     )
 
     assert obstacle.kwargs == expected
+    assert obstacle.kwargs["waypoints"] == M20MovingObstacleConfig().waypoints
     assert obstacle.kwargs["proximity_stop_distance_m"] == 0.9
     assert obstacle.kwargs["proximity_resume_distance_m"] == 1.1
     assert obstacle.kwargs["proximity_pause_s"] == 1.0

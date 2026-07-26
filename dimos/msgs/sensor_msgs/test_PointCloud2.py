@@ -111,6 +111,19 @@ def test_lcm_no_intensity_round_trip() -> None:
     np.testing.assert_allclose(decoded_pts.astype(np.float32), points, atol=1e-6)
 
 
+def test_voxel_downsample_does_not_create_legacy_cache() -> None:
+    points = np.stack([np.linspace(0.0, 1.0, 100), np.zeros(100), np.zeros(100)], axis=1).astype(
+        np.float32
+    )
+    pointcloud = PointCloud2.from_numpy(points)
+
+    downsampled = pointcloud.voxel_downsample(0.1)
+
+    assert pointcloud._pcd_legacy_cache is None
+    assert downsampled._pcd_legacy_cache is None
+    assert 0 < len(downsampled) < len(pointcloud)
+
+
 def test_bounding_box_intersects() -> None:
     """Test bounding_box_intersects method with various scenarios."""
     # Test 1: Overlapping boxes

@@ -39,8 +39,8 @@ m20mujocosimconnection:
   pointcloud_fps: 2.0
 
   # Azimuth samples per simulated revolution and per Airy unit. The real sensor
-  # emits many more points; 192 keeps the navigation simulation responsive.
-  pointcloud_width: 192
+  # emits many more points; 128 keeps the VM navigation and Rerun streams responsive.
+  pointcloud_width: 128
 
   # Airy 96-beam mode. Exact beam angles remain device-calibration data.
   pointcloud_height: 96

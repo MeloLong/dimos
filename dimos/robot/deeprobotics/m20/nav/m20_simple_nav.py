@@ -35,7 +35,7 @@ from dimos.navigation.replanning_a_star.module import (
     ReplanningAStarPlanner,
     ReplanningAStarPlannerConfig,
 )
-from dimos.robot.deeprobotics.m20.blueprints.basic import m20, rerun
+from dimos.robot.deeprobotics.m20.blueprints.basic import build_m20_rerun, m20
 from dimos.robot.deeprobotics.m20.mujoco_sim import (
     M20MujocoSimConfig,
     M20MujocoSimConnection,
@@ -145,9 +145,10 @@ m20_simple_nav = autoconnect(
 # envelope, which also accounts for onboard sensor hardware.
 _m20_sim_clearance = M20_MUJOCO_ENVELOPE["wall_clearance_m"]
 _m20_sim_height = M20_MUJOCO_ENVELOPE["robot_height"]
+_m20_sim_rerun = build_m20_rerun(simulation=True)
 
 m20_simple_nav_sim = autoconnect(
-    rerun,
+    _m20_sim_rerun,
     _m20_slam_ray_tracer,
     CostMapper.blueprint(
         config=HeightCostConfig(

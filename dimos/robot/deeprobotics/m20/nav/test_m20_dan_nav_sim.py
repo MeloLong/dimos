@@ -122,7 +122,7 @@ def test_m20_navigation_sim_uses_lightweight_sensor_profile() -> None:
         "lidar_rear_camera",
     )
     assert atom.kwargs["pointcloud_scan_pattern"] == "airy_hemisphere"
-    assert atom.kwargs["pointcloud_width"] == 192
+    assert atom.kwargs["pointcloud_width"] == 128
     assert atom.kwargs["pointcloud_height"] == 96
     assert atom.kwargs["pointcloud_fov_deg"] == 90.0
     assert atom.kwargs["pointcloud_min_range_m"] == 0.1

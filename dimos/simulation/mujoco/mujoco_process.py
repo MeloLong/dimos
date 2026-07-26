@@ -161,6 +161,9 @@ def _run_simulation(
         pointcloud_camera_ids: list[int] = []
         ray_directions_camera: NDArray[np.float64] | None = None
         raycast_geom_groups: NDArray[np.uint8] | None = None
+        raycast_geom_ids: NDArray[np.int32] | None = None
+        raycast_distances: NDArray[np.float64] | None = None
+        raycast_directions_world: NDArray[np.float64] | None = None
         if sensor_config.enable_pointcloud:
             if sensor_config.pointcloud_scan_pattern == "airy_hemisphere":
                 pointcloud_camera_ids = [
@@ -173,6 +176,10 @@ def _run_simulation(
                 )
                 raycast_geom_groups = np.zeros(6, dtype=np.uint8)
                 raycast_geom_groups[list(sensor_config.pointcloud_geom_groups)] = 1
+                ray_count = ray_directions_camera.shape[0]
+                raycast_geom_ids = np.empty(ray_count, dtype=np.int32)
+                raycast_distances = np.empty(ray_count, dtype=np.float64)
+                raycast_directions_world = np.empty_like(ray_directions_camera)
             else:
                 for camera_name in sensor_config.pointcloud_camera_names:
                     renderer = mujoco.Renderer(
@@ -182,8 +189,6 @@ def _run_simulation(
                     )
                     renderer.enable_depth_rendering()
                     pointcloud_renderers.append((renderer, _camera_id(model, camera_name)))
-
-            import open3d as o3d  # type: ignore[import-untyped]
 
         color_scene_option = mujoco.MjvOption()
         pointcloud_scene_option = mujoco.MjvOption()
@@ -255,45 +260,56 @@ def _run_simulation(
                             max_range_m=sensor_config.pointcloud_max_range_m,
                         )
                         if points.size > 0:
-                            all_points.append(points)
+                            all_points.append(points.astype(np.float32, copy=False))
 
-                    if ray_directions_camera is not None and raycast_geom_groups is not None:
+                    if (
+                        ray_directions_camera is not None
+                        and raycast_geom_groups is not None
+                        and raycast_geom_ids is not None
+                        and raycast_distances is not None
+                        and raycast_directions_world is not None
+                    ):
                         for camera_id in pointcloud_camera_ids:
                             origin = data.cam_xpos[camera_id].copy()
                             camera_mat = data.cam_xmat[camera_id].reshape(3, 3)
-                            directions_world = ray_directions_camera @ camera_mat.T
-                            ray_count = directions_world.shape[0]
-                            geom_ids = np.full(ray_count, -1, dtype=np.int32)
-                            distances = np.full(ray_count, -1.0, dtype=np.float64)
+                            np.matmul(
+                                ray_directions_camera,
+                                camera_mat.T,
+                                out=raycast_directions_world,
+                            )
+                            raycast_geom_ids.fill(-1)
+                            raycast_distances.fill(-1.0)
                             mujoco.mj_multiRay(  # type: ignore[attr-defined]
                                 model,
                                 data,
                                 origin,
-                                directions_world.ravel(),
+                                raycast_directions_world.ravel(),
                                 raycast_geom_groups,
                                 1,
                                 -1,
-                                geom_ids,
-                                distances,
+                                raycast_geom_ids,
+                                raycast_distances,
                                 None,
-                                ray_count,
+                                raycast_directions_world.shape[0],
                                 sensor_config.pointcloud_max_range_m,
                             )
-                            valid = (distances >= sensor_config.pointcloud_min_range_m) & (
-                                distances <= sensor_config.pointcloud_max_range_m
+                            valid = (raycast_distances >= sensor_config.pointcloud_min_range_m) & (
+                                raycast_distances <= sensor_config.pointcloud_max_range_m
                             )
                             if np.any(valid):
                                 all_points.append(
-                                    origin + directions_world[valid] * distances[valid, None]
+                                    (
+                                        origin
+                                        + raycast_directions_world[valid]
+                                        * raycast_distances[valid, None]
+                                    ).astype(np.float32)
                                 )
 
                     if all_points:
-                        pcd = o3d.geometry.PointCloud()
-                        pcd.points = o3d.utility.Vector3dVector(np.vstack(all_points))
-                        pcd = pcd.voxel_down_sample(voxel_size=sensor_config.pointcloud_voxel_size)
-                        shm.write_lidar(
-                            PointCloud2(pointcloud=pcd, ts=time.time(), frame_id="world")
-                        )
+                        pointcloud = PointCloud2.from_numpy(
+                            np.vstack(all_points), timestamp=time.time(), frame_id="world"
+                        ).voxel_downsample(sensor_config.pointcloud_voxel_size)
+                        shm.write_lidar(pointcloud)
 
                     last_pointcloud_time = current_time
 

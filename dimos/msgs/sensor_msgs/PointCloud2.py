@@ -191,7 +191,9 @@ class PointCloud2(Timestamped):
             PointCloud2 instance
         """
         pcd_t = o3d.t.geometry.PointCloud()
-        pcd_t.point["positions"] = o3c.Tensor(points.astype(np.float32), dtype=o3c.float32)
+        pcd_t.point["positions"] = o3c.Tensor(
+            points.astype(np.float32, copy=False), dtype=o3c.float32
+        )
         if intensities is not None:
             arr = intensities.astype(np.float32)
             if arr.ndim == 1:
@@ -387,7 +389,7 @@ class PointCloud2(Timestamped):
         """Downsample the pointcloud with a voxel grid."""
         if voxel_size <= 0:
             return self
-        if len(self.pointcloud.points) < 20:
+        if len(self) < 20:
             return self
         downsampled = self._pcd_tensor.voxel_down_sample(voxel_size)
         return PointCloud2(pointcloud=downsampled, frame_id=self.frame_id, ts=self.ts)

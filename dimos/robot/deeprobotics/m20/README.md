@@ -232,7 +232,7 @@ uv run --no-sync dimos --rerun-open none run m20-simple-nav-sim \
 ```
 
 The normal profile publishes only front 640 x 360 RGB at 10 Hz and a merged
-front/rear point cloud at 2 Hz. Each simulated Airy uses 192 azimuth samples,
+front/rear point cloud at 2 Hz. Each simulated Airy uses 128 azimuth samples,
 96 vertical channels, a 360 x 90-degree hemispherical FOV, a 0.1 m minimum
 range, and a 10 m runtime cutoff. The real Airy supports a 60 m decoder range
 and a much denser point stream; the lower simulated rate and azimuth density

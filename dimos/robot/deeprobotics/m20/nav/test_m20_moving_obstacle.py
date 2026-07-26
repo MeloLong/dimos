@@ -40,6 +40,13 @@ def _config(**overrides: object) -> M20MovingObstacleConfig:
     )
 
 
+def test_enabled_override_uses_default_waypoints() -> None:
+    config = M20MovingObstacleConfig(enabled=True)
+
+    assert config.enabled is True
+    assert len(config.waypoints) == 5
+
+
 def test_random_walk_is_reproducible() -> None:
     first = RandomWaypointWalk(_config(seed=7, speed_mps=1.0))
     second = RandomWaypointWalk(_config(seed=7, speed_mps=1.0))
