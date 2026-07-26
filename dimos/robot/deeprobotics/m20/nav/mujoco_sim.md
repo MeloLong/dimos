@@ -1,227 +1,316 @@
-# M20 Navigation MuJoCo Test
+# M20 MuJoCo Runtime And Configuration Reference
 
-For installation, official asset provenance, controller contracts, and the
-full integration workflow, read [the English M20 integration README](/dimos/robot/deeprobotics/m20/README.md).
-The [Chinese README](/dimos/robot/deeprobotics/m20/README.zh-CN.md) covers the same workflow.
+This document is the operational reference for the M20 MuJoCo navigation
+simulation. Start with the [M20 integration README](/dimos/robot/deeprobotics/m20/README.md) for asset
+provenance, installation, validation evidence, and acceptance limits.
 
-The official DeepRobotics M20 MuJoCo model and locomotion policy can exercise
-two M20 navigation chains without opening a MuJoCo window:
+## Blueprint Selection
 
-| Blueprint | Command | Planning and tracking chain |
+| Blueprint | Use it to test | Composition |
 | --- | --- | --- |
-| Dan navigation | `m20-dan-nav-sim` | MLSPlannerNative -> DanLocalPlanner -> DanHolonomicTC |
-| Simple navigation | `m20-simple-nav-sim` | CostMapper -> ReplanningAStarPlanner -> LocalPlanner/PController |
+| `m20-simple-nav-sim` | A* planning, constrained path smoothing, obstacle-triggered replanning, and rotate-then-drive tracking | `CostMapper -> ReplanningAStarPlanner -> LocalPlanner/PController` |
+| `m20-dan-nav-sim` | MLS global planning, DAN local planning, and holonomic trajectory control | `MLSPlannerNative -> DanLocalPlanner -> DanHolonomicTC` |
 
-## Simple Navigation Trajectory Test
+Both blueprints use the official DeepRobotics M20 MJCF and ONNX policy. They
+publish `dimos/slam_odom`, `dimos/slam_aligned_points`, and front
+`color_image`, and consume `cmd_vel`. They run MuJoCo headlessly and do not
+instantiate the physical `M20Connection`.
 
-Use this blueprint when testing the existing A* path generation, 0.1 m path
-smoothing/resampling, obstacle-triggered replanning, and the rotate-then-drive
-LocalPlanner. It deliberately does not include DanLocalPlanner or
-DanHolonomicTC.
+`m20-simple-nav-sim` additionally instantiates `M20MovingObstacle`. The module
+moves a person-shaped mocap body through the scene. Its proximity behavior
+pauses and redirects the person; it is not a robot-side stop function.
 
-```bash
-cd /home/markus/work/dimos_m20
-source "$HOME/.cargo/env"
-source .venv/bin/activate
-dimos stop
-dimos --rerun-open none run m20-simple-nav-sim
+## Clean Startup
+
+Always stop the earlier run before starting a new test. Stale mapping, Viewer,
+or simulator processes can consume CPU and retain ports.
+
+```sh skip
+cd /path/to/dimos
+uv run --no-sync dimos stop
 ```
 
-The simulator publishes `dimos/slam_odom` and
-`dimos/slam_aligned_points`, while `MovementManager` routes planner
-`nav_cmd_vel` to MuJoCo through `cmd_vel`. The blueprint uses the checked-in
-M20 model envelope from `mujoco_sim.yaml`: 0.70 m height and 0.50 m radial
-clearance, resulting in a 1.00 m A* robot width and rotation diameter. This
-validates the published M20 MJCF and ONNX control contract, but it does not
-replace real-hardware validation of payloads, sensors, traction, or safety limits.
+For an interactive Simple Nav run with a visible native Rerun Viewer:
+
+```sh skip
+MUJOCO_GL=egl uv run --no-sync dimos --rerun-open native run m20-simple-nav-sim
+```
+
+For a bounded headless smoke test:
+
+```sh skip
+timeout --signal=INT --kill-after=10s 30s \
+  env MUJOCO_GL=egl uv run --no-sync dimos --rerun-open none \
+  run m20-simple-nav-sim
+```
+
+For DAN navigation:
+
+```sh skip
+MUJOCO_GL=egl uv run --no-sync dimos --rerun-open native run m20-dan-nav-sim
+```
+
+If an SSH shell has no usable desktop environment, use `--rerun-open none` and
+launch the Viewer from a desktop terminal:
+
+```sh skip
+uv run --no-sync dimos-viewer --connect rerun+http://127.0.0.1:9877/proxy
+```
+
+The simulation Rerun layout contains one `M20 Front` 2D view and one 3D view.
+`color_image` and `color_image_rear` are explicitly excluded from the 3D view;
+a red image entity under 3D indicates an old layout, not a corrupt image.
+
+## Goal And Motion Checks
+
+For every change to control, sensing, or planning:
+
+1. Let the robot settle and confirm odometry, RGB, merged point cloud, local
+   map, global map, and costmap update.
+2. Send a short forward goal in open space and wait for `goal_reached`.
+3. Send a goal that requires initial rotation and observe the transition to
+   `path_following`.
+4. Check normal teleop in forward, reverse, positive/negative yaw, and lateral
+   directions. Treat lateral and signed-yaw magnitude as diagnostic only; they
+   are not calibrated acceptance axes.
+5. Stop the run and confirm no simulator, mapping, planner, or Viewer process
+   remains before repeating the test.
+
+The checked-in simulation yaw adapter multiplies `angular.z` by `2.0` and caps
+it at `1.6 rad/s`. Normal Viewer teleop (`0.8 rad/s`) therefore reaches the cap;
+Shift fast mode remains capped. Simple Nav's `0.55 rad/s` tracking limit becomes
+`1.1 rad/s`. This changes only commands sent to the simulation and does not
+modify the official ONNX or physical-robot settings.
+
+## Parameter Reference
+
+The source of truth is
+[`config/mujoco_sim.yaml`](/dimos/robot/deeprobotics/m20/config/mujoco_sim.yaml). The comments in that
+file describe range constraints and tuning tradeoffs. Restart DimOS after
+editing it.
+
+### RGB And Synthetic Lidar
+
+Section: `m20mujocosimconnection`. Used by both simulation blueprints.
+
+| Parameter | Default | Meaning |
+| --- | --- | --- |
+| `enable_color` | `true` | Enable RGB rendering; must remain true if either image topic is published |
+| `color_camera_name` | `head_camera` | MJCF camera used for RGB |
+| `color_frame_id` | `camera_optical` | Frame ID attached to simulation image metadata |
+| `width`, `height` | `640`, `360` | Front RGB dimensions |
+| `fps` | `8.0` | RGB source publication target |
+| `color_fov_deg` | `45.0` | Vertical RGB field of view |
+| `publish_front_image` | `true` | Publish `color_image` |
+| `publish_rear_image` | `false` | Do not duplicate the front renderer on the rear topic |
+| `yaw_command_scale` | `2.0` | Simulation-only multiplier for `angular.z` |
+| `yaw_command_limit` | `1.6` | Absolute simulation yaw cap in rad/s |
+| `enable_pointcloud` | `true` | Enable synthetic lidar and merged point-cloud publication |
+| `pointcloud_scan_pattern` | `airy_hemisphere` | Use camera-forward 180 x 90-degree sectors |
+| `pointcloud_fps` | `2.0` | Merged point-cloud target rate |
+| `pointcloud_width` | `64` | Azimuth samples per Airy sector |
+| `pointcloud_height` | `96` | Vertical channels per Airy unit |
+| `pointcloud_camera_names` | front, rear | MJCF ray origins; their frames face opposite directions |
+| `pointcloud_geom_groups` | `[0, 1]` | Scene groups visible to rays; robot groups 2 and 3 remain excluded |
+| `person_collision_enabled` | `false` | Keep the mocap person visible to rays without physical contact |
+| `pointcloud_fov_deg` | `90.0` | Vertical FOV; azimuth is fixed to 180 degrees by this scan pattern |
+| `pointcloud_min_range_m` | `0.1` | Minimum retained ray hit |
+| `pointcloud_max_range_m` | `10.0` | Maximum retained ray hit in the office profile |
+| `pointcloud_voxel_size` | `0.05` | Navigation point-cloud voxel downsampling in metres |
+
+The real RoboSense Airy specification is 360 x 90 degrees and the decoder
+supports up to 60 m. Two full-azimuth synthetic units would produce duplicate
+coverage because robot geometry is excluded from raycasts, so the current
+model uses outward front/rear sectors. The profile does not reproduce DIFOP
+beam calibration, production point rate, scan timing, noise, blind zones,
+occlusion, or motion distortion.
+
+### Moving Person
+
+Section: `m20movingobstacle`. Used only by `m20-simple-nav-sim`.
+
+| Parameter | Default | Meaning |
+| --- | --- | --- |
+| `enabled` | `true` | Start the simulated person |
+| `seed` | `20` | Reproducible pseudo-random route choices |
+| `speed_mps` | `0.15` | Person ground speed |
+| `update_hz` | `20.0` | Mocap pose publication rate |
+| `initial_waypoint_index` | `0` | Initial node in the checked-in office route |
+| `z_m` | `0.0` | Ground-level mocap height |
+| `proximity_stop_distance_m` | `0.9` | Pause distance from robot centre |
+| `proximity_resume_distance_m` | `1.1` | Hysteresis distance for normal walking to resume |
+| `proximity_pause_s` | `1.0` | Pause before selecting a retreat edge |
+| `waypoints` | Five office points | Validated route graph used for adjacent-edge choices |
+
+The normal run needs no `enabled=true` CLI override. YAML cannot start the
+module by itself; the root Simple Nav blueprint creates and wires it.
+
+### Planning Envelope
+
+Section: `mlsplannernative`. Used by both simulation blueprints.
+
+| Parameter | Default | Meaning |
+| --- | --- | --- |
+| `robot_height` | `0.7` | Standing MJCF height plus simulation margin |
+| `wall_clearance_m` | `0.5` | Radial body/wheel clearance from walls and map edges |
+
+The physical `m20-dan-nav` profile intentionally uses a larger 1.00 m vertical
+envelope and 0.55 m wall clearance for the complete hardware. Do not copy the
+simulation values into real-robot safety configuration.
+
+### Simple Nav Path Processing
+
+Section: `replanningastarplanner`. Used only by `m20-simple-nav-sim`.
+
+| Parameter | Default | Meaning |
+| --- | --- | --- |
+| `publish_raw_path` | `true` | Publish grid A* output for Rerun comparison |
+| `constrained_path_smoothing_enabled` | `true` | Use bounded, costmap-aware smoothing |
+| `path_smoothing_iterations` | `40` | Maximum iterative smoothing steps |
+| `path_smoothing_data_weight` | `0.02` | Attraction to the raw A* path |
+| `path_smoothing_smoothness_weight` | `0.45` | Neighbour/Laplacian smoothing strength |
+| `path_smoothing_max_deviation_m` | `0.10` | Maximum displacement from matching raw points |
+| `path_smoothing_collision_sample_spacing_m` | `0.05` | Costmap sample spacing along candidate segments |
+| `path_smoothing_max_cost_increase` | `2.0` | Maximum accepted mean-cost increase |
+| `path_smoothing_backtracking_factor` | `0.5` | Retained smoothing fraction after a failed candidate |
+| `path_smoothing_max_backtracking_steps` | `3` | Reduced-fraction retries after the full candidate |
+| `path_smoothing_validator_shadow_enabled` | `true` | Record candidate metrics without changing selection |
+| `path_smoothing_physical_validator_shadow_enabled` | `true` | Evaluate Stage 2 physical policy in shadow mode |
+| `path_smoothing_physical_validator_authoritative_enabled` | `false` | Keep the physical policy non-authoritative |
+| `path_smoothing_physical_validator_max_clearance_loss_m` | `0.025` | Provisional maximum candidate clearance loss |
+| `path_smoothing_physical_validator_max_unknown_length_increase_m` | `0.0` | Additional allowed path length in unknown cells |
+| `path_resample_spacing_m` | `0.10` | Approximate final controller waypoint spacing |
+
+Shadow validators publish diagnostics only while
+`path_smoothing_physical_validator_authoritative_enabled` is false. The legacy
+collision/cost/backtracking decision remains authoritative.
+
+### Runtime Overrides
+
+One-off values can be changed without editing YAML:
+
+```sh skip
+uv run --no-sync dimos --rerun-open none run m20-simple-nav-sim \
+  --option m20mujocosimconnection.pointcloud_fps=1.0 \
+  --option m20mujocosimconnection.pointcloud_width=32 \
+  --option m20movingobstacle.enabled=false
+```
+
+An alternate `--config` file uses the DimOS JSON configuration format, not the
+M20 YAML schema:
+
+```sh skip
+uv run --no-sync dimos run m20-dan-nav-sim --config /path/to/custom.json
+```
+
+## Performance Reference
+
+The final profile was measured on the ARM VM described in the integration
+README with EGL MuJoCo and a visible native Viewer rendered through
+`llvmpipe`.
+
+| Profile | RGB result | Long-frame behavior | Lidar result |
+| --- | --- | --- | --- |
+| Earlier 128 x 96 Airy sectors | About 7.56 FPS | Maximum interval 255.7 ms | About 1.8-2.0 Hz |
+| Current 64 x 96 Airy sectors | About 7.73 FPS | P95 133.5 ms; maximum 135.6 ms | About 1.8-2.0 Hz |
+
+The change preserves both sensors and all 96 vertical lines while reducing
+synthetic azimuth work. Rerun's point cloud is downsampled again for display;
+that visual override does not change the point cloud consumed by navigation.
+Occasional isolated long frames remain possible during global-map or goal
+transitions on software rendering.
+
+A 30-second headless startup on the current profile deployed all 11 modules,
+loaded the official ONNX, sustained 7.70-7.91 RGB FPS and 1.98-1.99 lidar Hz,
+and exercised moving-person pause, redirect, and resume behavior. SIGINT
+shutdown removed all processes and listeners but printed a Python
+`resource_tracker` warning for seven shared-memory objects.
+
+A separate 30-second `m20-dan-nav-sim` startup deployed all 12 modules and
+started the native voxel mapper, native MLS planner, DAN planner/controller,
+official ONNX, and MuJoCo process. Its shutdown also removed all processes and
+listeners and reproduced the same shared-memory warning.
 
 ## Recording And Replay
 
-Use an external Rerun server to persist visual diagnostics, including enabled
-RGB, SLAM point clouds, maps, TF, and planner visuals. Start it before DimOS:
+### Rerun RRD
 
-```bash
+Start the recording server before DimOS so it owns port `9877` and receives the
+first event:
+
+```sh skip
 mkdir -p /public/M20_dimos
 uv run --no-sync rerun --serve-grpc --port 9877 \
   --server-memory-limit 15GB \
   --save "/public/M20_dimos/m20_$(date +%Y%m%d_%H%M%S).rrd"
 ```
 
-Then start `m20-simple-nav-sim` in a separate terminal with
-`--rerun-open none`. The M20 bridge detects the existing port `9877` and
-connects to it. Stop DimOS first and then stop the Rerun server to finalize the
-RRD. Verify and replay the result with:
+In a second terminal:
 
-```bash
+```sh skip
+MUJOCO_GL=egl uv run --no-sync dimos --rerun-open none run m20-simple-nav-sim
+```
+
+Stop DimOS first, then stop the Rerun server so the file is finalized. Verify
+and replay it with:
+
+```sh skip
 uv run --no-sync rerun rrd verify /public/M20_dimos/run.rrd
 uv run --no-sync rerun /public/M20_dimos/run.rrd --memory-limit 8GB
 ```
 
-The Rerun server must start before DimOS. If DimOS starts first, its bridge
-claims port `9877` without `--save`; a later recording server cannot bind that
-port or save the earlier events. Restart both processes in the documented
-order when that happens.
+Do not run `uv run /path/file.rrd`; `uv run` expects an executable in that
+position. The executable is `rerun`, and the RRD path is its argument.
 
-For a structured SQLite recording, compose the optional recorder:
+If DimOS starts first, its bridge claims `9877` without `--save`. A later
+recording server cannot bind the same port or recover earlier events. Stop both
+and restart them in the documented order.
 
-```bash
+### SQLite DB
+
+Compose `nav-record` at initial startup:
+
+```sh skip
 mkdir -p /public/M20_dimos/db
 uv run --no-sync dimos --rerun-open none run m20-simple-nav-sim nav-record \
-  --option "navrecord.db_path=/public/M20_dimos/db/m20-sim.db"
+  --option navrecord.db_path=/public/M20_dimos/db/m20-sim.db
 ```
 
-`nav-record` records only connected streams. The current M20 Sim composition
-records TF and `global_map`; it does not automatically capture
-`dimos/slam_odom`, `dimos/slam_aligned_points`, or RGB. Render a DB to RRD with
-`dimos mem rerun /path/run.db --out /path/run-from-db.rrd --no-gui`.
-See [Navigation Recording And Replay](/docs/usage/navigation_recording_replay.md)
-for stream inspection, web replay, and programmatic SQLite replay.
+The current composition records only connected recorder streams: TF and
+`global_map`. It does not automatically capture odometry, raw point clouds, or
+RGB. Render a DB to RRD with:
 
-The current DB recorder is part of the initial `dimos run` composition and
-cannot be dynamically added to an already-running navigation coordinator. A
-future standalone `m20-sim-nav-record` process should subscribe to the same
-LCM topics with explicit M20 sensor mappings. That design would permit
-mid-run capture of future messages without port `9877` dependency, but it is
-not yet an available blueprint.
-
-The simulation also enables one person-shaped moving obstacle. It reuses the
-existing MuJoCo mocap person and `/person_pose` transport, so the obstacle is
-visible to RGB and synthetic point clouds. Physical contact is disabled by
-default because a prescribed mocap body has effectively infinite mass and can
-push over the M20 instead of testing perception and replanning. A fixed random
-seed chooses between adjacent edges of an office path already used by the
-MuJoCo person-follow tests. Disable the obstacle with
-`--option m20movingobstacle.enabled=false` when comparing against a static map.
-The person also observes `dimos/slam_odom`: when it approaches within 0.9 m of
-the robot, it stops for 1 second, reverses along a validated waypoint edge, and
-returns to normal random walking after reaching 1.1 m separation. These values
-are configured under `m20movingobstacle` in `mujoco_sim.yaml`.
-
-`m20-dan-nav-sim` runs the WD M20 Dan navigation stack against the existing
-DimOS MuJoCo simulator without opening a MuJoCo window.
-
-```bash
-cd /home/markus/work/dimos_m20
-source "$HOME/.cargo/env"
-source .venv/bin/activate
-dimos stop
-dimos --rerun-open none run m20-dan-nav-sim
+```sh skip
+uv run --no-sync dimos mem rerun /path/run.db \
+  --out /path/run-from-db.rrd --no-gui
 ```
 
-The simulator publishes M20-compatible `slam_odom` and `slam_aligned_points`
-topics and consumes `cmd_vel`. The front RGB stream is enabled for simulation
-inspection, while the rear image topic remains disabled because the legacy
-simulator has no rear camera and would only duplicate the front frame. The
-simulator uses the official DeepRobotics M20 MJCF and 57-input/16-output ONNX
-policy from `DeepRoboticsLab/sdk_deploy`. The model is a 16-DOF wheel-legged
-quadruped; source and license details are recorded in the asset directory.
+The recorder is part of the initial coordinator composition and cannot be
+added dynamically to an already-running navigation coordinator. A standalone
+M20 recorder with explicit stream mappings would be required for independent
+mid-run DB capture. See
+[Navigation Recording And Replay](/docs/usage/navigation_recording_replay.md)
+for the generic recording model.
 
-Simulation sensor settings and the M20 MLS planning envelope are validated
-module parameters. The checked-in default profile is:
+## Troubleshooting And Cleanup
 
-```text
-dimos/robot/deeprobotics/m20/config/mujoco_sim.yaml
+| Symptom | Action |
+| --- | --- |
+| Camera view shows three loading dots | Confirm the simulation-specific front-only Rerun blueprint is active; restart after updating the checkout |
+| RGB is slow while maps update | Check whether the Viewer uses `llvmpipe`; reduce display load or provide graphics acceleration before reducing 96 lidar channels |
+| Front/rear lidar coverage looks identical | Confirm the current 180-degree sector implementation and opposite MJCF camera frames are present |
+| Robot turns only in Viewer fast mode | Confirm `yaw_command_scale: 2.0` and `yaw_command_limit: 1.6`, then restart |
+| CLI reports a missing obstacle waypoint | The checkout has an old partial-config bug; use the current YAML and omit the redundant `enabled=true` override |
+| Port `9877` is already in use | Stop DimOS and the external recorder; start the recorder first only when saving RRD |
+| `dimos stop` times out | Check and terminate stale MuJoCo, MLS, voxel-map, and Viewer processes before relaunching |
+| Shutdown prints a shared-memory `resource_tracker` warning | Check for residual processes and ports; the bounded reference run cleaned them up, but graceful shared-memory teardown remains an open lifecycle issue |
+
+Useful listener check:
+
+```sh skip
+ss -ltnp | grep -E ':(3030|7779|9877|9878)\b' || true
 ```
 
-Edit that file and restart `m20-dan-nav-sim`; opening Python source is not
-required. The blueprint loads and validates the YAML at startup. Inline
-comments in that file document every checked-in parameter.
-
-| Parameter | Default | Effect |
-| --- | --- | --- |
-| `enable_color` | `True` | Create and run the RGB renderer |
-| `publish_front_image` | `True` | Publish RGB as `color_image` |
-| `publish_rear_image` | `False` | Duplicate RGB to the rear topic; no rear renderer exists |
-| `width`, `height`, `fps` | `640`, `360`, `10` | Front RGB render size and rate |
-| `yaw_command_scale` | `2.0` | Simulation-only multiplier for `angular.z` commands |
-| `yaw_command_limit` | `1.6` | Simulation-only absolute yaw-command cap in rad/s |
-| `enable_pointcloud` | `True` | Run synthetic lidar and publish the merged point cloud |
-| `pointcloud_scan_pattern` | `airy_hemisphere` | Use an outward-facing 180 x 90-degree MuJoCo ray sector |
-| `pointcloud_fps` | `2` | Synthetic point-cloud rate |
-| `pointcloud_width`, `pointcloud_height` | `128`, `96` | Reduced azimuth samples and Airy vertical channels per lidar |
-| `pointcloud_min_range_m` | `0.1` | Official Airy decoder minimum range |
-| `pointcloud_max_range_m` | `10` | Maximum retained depth hit distance for the office scene |
-| `pointcloud_camera_names` | front, rear | MuJoCo mount frames used as ray origins |
-| `pointcloud_geom_groups` | `[0, 1]` | MuJoCo geometry groups visible to lidar rays |
-| `pointcloud_fov_deg` | `90` | Official Airy vertical FOV; simulated azimuth is 180 degrees per mount |
-| `pointcloud_voxel_size` | `0.05` | Open3D downsampling resolution in metres |
-
-The `mlsplannernative` section keeps the planner envelope consistent with the
-official M20 MJCF used by this simulation:
-
-| Parameter | Value | Basis |
-| --- | --- | --- |
-| `robot_height` | `0.70 m` | M20 standing model height plus vertical margin |
-| `wall_clearance_m` | `0.50 m` | M20 body and wheel radius plus lateral margin |
-
-The real `m20-dan-nav` blueprint continues to use its separate M20 envelope
-(`1.00 m` height and `0.55 m` hard wall clearance). The remaining mapping,
-planner cost, and controller parameters are intentionally shared for now.
-
-The generic defaults preserve the legacy G1/Go2 visible groups `(0, 1, 2)`.
-The M20 profile limits lidar raycasts to groups `(0, 1)`. The imported
-M20 visual geometry is in group `2` and its collision geometry is rendered in
-group `3`, so neither is scanned by the synthetic lidars. Including
-either group makes MLS inflate robot points into an obstacle around its own
-start pose. Keep `publish_rear_image=false` unless duplicate front data is
-intentionally required.
-
-The Airy profile is based on RoboSense's
-[official 360 x 90-degree product specification](https://www.robosense.ai/en/IncrementalComponents/Airy)
-and
-[official decoder](https://github.com/RoboSense-LiDAR/rs_driver/blob/897b14d3bdb6186a75df27ba51b65b5bd5557723/src/rs_driver/driver/decoder/decoder_RSAIRY.hpp).
-The driver confirms 48/96/192 modes, defaults to 96 channels, accepts distances
-from 0.1 to 60 m at 0.005 m resolution, and loads 96 vertical plus 96 horizontal
-calibration angles from DIFOP. No official Airy MuJoCo/Gazebo configuration or
-M20 mounting transforms are published. The simulator therefore uses uniform
-elevation and azimuth samples, limits range to 10 m, and publishes at 2 Hz.
-Because robot geometry is excluded from raycasts, each mount uses only its
-forward 180-degree sector; otherwise the front and rear full-azimuth sets would
-duplicate one another through the chassis. This is a simulation approximation,
-not a change to the real sensor specification. It does not reproduce factory
-beam calibration, full point rate, scan timing, noise, blind zones, occlusion,
-or motion distortion.
-
-Normal Viewer teleop publishes `0.8 rad/s` yaw and Shift fast mode publishes
-`1.6 rad/s`. The M20 simulation adapter applies the checked-in `2.0` multiplier
-and `1.6 rad/s` cap, so normal and fast teleop both reach the policy input cap.
-Simple Nav's `0.55 rad/s` path-following limit becomes `1.1 rad/s`. The adapter
-does not modify the official M20 ONNX, and the known signed-yaw response
-asymmetry remains a separate policy-fidelity limitation.
-
-The low-load profile was measured on the same ARM VM with headless EGL MuJoCo
-and the native Rerun viewer using software-rendered `llvmpipe`:
-
-| Profile | Merged points/frame | Lidar receive rate | Front RGB receive rate |
-| --- | ---: | ---: | ---: |
-| 192 x 96 per Airy | 26,000-27,500 | 1.6-2.0 Hz | 7-8 FPS |
-| 128 x 96 per Airy | 19,000-19,700 | 1.77-1.99 Hz | 7.1-8.1 FPS |
-
-The 128-sample profile reduces displayed point volume by roughly 27% while
-preserving 96 vertical channels, front/rear coverage, and successful goal
-navigation. RGB remains limited mainly by the VM's software-rendered viewer.
-
-The checked-in default profile uses YAML so it can carry comments. An alternate
-runtime config selected with `--config` still uses the DimOS JSON config format,
-and one-off values can be overridden without editing either file:
-
-```bash
-dimos run m20-dan-nav-sim --config /path/to/custom.json
-dimos run m20-dan-nav-sim \
-    --option m20mujocosimconnection.pointcloud_fps=1.0
-```
-
-The simple-nav profile also enables candidate-validator shadow metrics. Every
-plan records raw and fractional-candidate clearance, unknown exposure, path
-length, cumulative turn, mean cost, failure reason, and selected alpha. Shadow
-mode evaluates diagnostics only; the existing `raw_mean_cost + 2.0` gate still
-selects the controller path.
-
-Use `m20-dan-nav` for the real M20 connection. The simulation blueprint does
-not include `M20Connection`, so starting it cannot send commands to the robot.
-
-In an SSH session without `DISPLAY`, the current WD Rerun websocket path may
-print a native-viewer `winit` warning. The simulation is healthy when the CLI
-reports all modules started and the health check passes. `dimos stop` may also
-escalate after its graceful timeout; verify that MuJoCo, MLS, voxel processes
-and ports `7779`, `3030`, `9877`, and `9878` are gone before restarting.
+The simulation is healthy in headless mode when all modules start, health
+checks pass, streams update, and shutdown removes the coordinator and child
+processes. A missing GUI by itself is not a simulator failure.

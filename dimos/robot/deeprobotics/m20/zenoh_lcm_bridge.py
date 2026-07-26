@@ -17,9 +17,9 @@
 
 The M20's perception (``slam_aligned_points``, ``slam_odom``, ...) only exists on
 zenoh (robot -> aos router). LCM-based native modules -- e.g. ``RayTracingVoxelMap``
-in the ``m20-nav`` blueprint -- subscribe on LCM. dimos serializes both transports
-identically (``lcm_encode``), so we forward the raw payload bytes untouched; only
-the channel string differs:
+in the ``m20-simple-nav`` and ``m20-dan-nav`` blueprints -- subscribe on LCM. dimos
+serializes both transports identically (``lcm_encode``), so we forward the raw
+payload bytes untouched; only the channel string differs:
 
     zenoh  "dimos/slam_aligned_points/sensor_msgs.PointCloud2"
     LCM    "dimos/slam_aligned_points#sensor_msgs.PointCloud2"

@@ -56,8 +56,6 @@ m20_overhead_clearance = m20_height_clearance + m20_overhead_safety_margin
 m20_max_step_height = 0.15
 m20_rotation_diameter = 1.2
 m20_safe_radius_margin = 0.1
-map_save_dir = Path(__file__).resolve().parent / "map_save"
-map_save_path = map_save_dir / "m20_accumulated_map.pcd"
 M20_MUJOCO_SIM_CONFIG_PATH = Path(__file__).resolve().parents[1] / "config/mujoco_sim.yaml"
 
 
@@ -104,19 +102,6 @@ _m20_slam_ray_tracer = RayTracingVoxelMap.blueprint(
         (RayTracingVoxelMap, "odometry", "dimos/slam_odom"),
     ]
 )
-
-# _m20_pointcloud_map_save = PointCloudMapSave.blueprint(
-#     translation_threshold_m=0.5,
-#     rotation_threshold_rad=math.radians(15.0),
-#     voxel_size=voxel_size,
-#     save_path=str(map_save_path),
-# ).remappings(
-#     [
-#         (PointCloudMapSave, "lidar", "dimos/slam_aligned_points"),
-#         (PointCloudMapSave, "odometry", "dimos/slam_odom"),
-#         (PointCloudMapSave, "global_map", "dimos/m20_saved_pointcloud_map"),
-#     ]
-# )
 
 m20_simple_nav = autoconnect(
     m20,

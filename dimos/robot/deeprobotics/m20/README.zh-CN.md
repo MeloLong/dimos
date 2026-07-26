@@ -1,278 +1,325 @@
-# DimOS 官方 DeepRobotics M20 MuJoCo 集成指南
+# DeepRobotics M20 MuJoCo 集成
 
-本文是将官方 DeepRobotics M20 MuJoCo 模型接入 DimOS 的可复用入口文档。
-内容覆盖代码获取、环境安装、模型与策略契约验证，以及两条 M20 导航仿真链路的启动方法。
+本目录包含 DeepRobotics M20 的 DimOS 集成，包括 MuJoCo 仿真、官方运动策略、
+实车通信适配和导航蓝图。
+
+> [!IMPORTANT]
+> 当前 M20 支持及本文测试结果均属于实验阶段。该仿真可用于导航集成和回归测试，
+> 但不能代替实体机器人的标定和安全测试。
 
 语言：[English](/dimos/robot/deeprobotics/m20/README.md) | 中文
 
-完成本文后，运行参数调优、录制、回放和完整传感器配置请继续阅读
-[M20 MuJoCo 运行指南](/dimos/robot/deeprobotics/m20/nav/mujoco_sim.md)。
+## 文档导航
 
-## 推荐阅读顺序
+| 文档 | 内容范围 |
+| --- | --- |
+| 本 README | 安装、架构、配置归属、验证证据和已知限制 |
+| [MuJoCo 运行参考](/dimos/robot/deeprobotics/m20/nav/mujoco_sim.md) | 蓝图命令、Viewer 操作、YAML 参数、录制和故障排查 |
+| [资产来源记录](/dimos/robot/deeprobotics/m20/assets/SOURCE.md) | 上游仓库、固定提交、许可证和 DimOS 对 MJCF 的改动 |
 
-1. **首次安装：** [范围与型号确认](#范围与型号确认)、[快速安装与启动](#快速安装与启动)、[前置条件](#前置条件)。
-2. **集成开发：** [已包含内容](#已包含内容)、[运行架构](#运行架构)、[模型与策略契约](#模型与策略契约)、[配置与临时覆盖](#配置与临时覆盖)。
-3. **使用结果前：** [验证清单](#验证清单)、[控制保真度审查](#控制保真度审查)、[已知运动限制](#已知运动限制)、[测试汇总与优化方向](#测试汇总与优化方向)。
-4. **运行维护：** [录制与回放](#录制与回放)、[常见问题](#常见问题)、[更新到新版官方资产](#更新到新版官方资产)。
+## 范围与来源
 
-
-## 范围与型号确认
-
-导入的资产来自官方
+模型、网格和运动策略来自官方
 [DeepRoboticsLab/sdk_deploy](https://github.com/DeepRoboticsLab/sdk_deploy)
-仓库的提交 `80e3d40084c4ed151ba6f88b0d55cf1d480aa45e`，许可证为 BSD-3-Clause。
+仓库的提交 `80e3d40084c4ed151ba6f88b0d55cf1d480aa45e`，许可证为
+BSD-3-Clause。
 
-官方仓库将该机器人称为 **M20**，并说明其为 16 自由度轮足四足机器人；公开资料中没有
-`M20 Pro` 标识。因此本集成一律使用官方的 M20 名称。它不能证明内部称为 M20 Pro 的实体机器人在
-尺寸、载荷、传感器或标定上与仿真模型完全一致。
+公开源代码将这台 16 自由度轮足四足机器人称为 **M20**，没有使用 M20 Pro 名称。
+因此，本集成不能证明一台被称为 M20 Pro 的实体产品具有完全相同的结构、传感器、
+标定、固件或载荷。
 
-资产清单及为适配 DimOS 所做的改动记录在
-[SOURCE.md](/dimos/robot/deeprobotics/m20/assets/SOURCE.md)。不要以未经验证的第三方模型或
-Unitree 策略替换这些文件。
+仓库中 ONNX 的 SHA-256 为
+`0ac99f3093d4a984d7587b88d57300cbf7ec2f788401dfa1570d1e4800568f6b`，
+与固定上游提交中的策略一致。上游实机部署说明也会加载这个策略路径，但已部署机器人
+仍可能使用厂商或现场替换过的文件；在宣称二进制一致前，应读取实机哈希。
 
-RGB 相机和雷达安装位是 DimOS 为仿真添加的内容。本项目实体硬件使用前后两台 RoboSense Airy
-96 线雷达。RoboSense
-[官方产品规格](https://www.robosense.ai/IncrementalComponents/Airy)给出 360 x 90 度半球视场；
-[官方驱动](https://github.com/RoboSense-LiDAR/rs_driver/blob/897b14d3bdb6186a75df27ba51b65b5bd5557723/src/rs_driver/driver/decoder/decoder_RSAIRY.hpp)
-定义了 96 通道模式、0.1-60 m 解码距离，以及由设备加载的逐通道标定角。但这些官方来源均未公开
-M20 安装外参或可复用的 MuJoCo 模型，因此仿真数据仍是有明确边界的近似。
-由于合成射线会排除机器人自身几何体，为保留前后安装朝向，仿真将每台雷达建模为朝外的
-180 x 90 度扇区，避免两套射线穿过机身后形成重复的全方位覆盖；这并不改变实物 Airy 的
-360 x 90 度官方规格。
+DimOS 保留官方机器人几何、惯量、关节限制、执行器和策略；删除原场景的地面和灯光，
+为合成传感器分配几何组，增加命名相机和传感器，并增加站立关键帧。完整边界见
+[资产来源记录](/dimos/robot/deeprobotics/m20/assets/SOURCE.md)。
 
-## 控制保真度审查
+RGB 相机和 RoboSense Airy 雷达仿真由 DimOS 添加，并不是厂商标定的 M20 传感器模型。
+实体 Airy 官方规格为 360 x 90 度、96 通道，解码距离最大 60 m。默认仿真为前后两个
+朝外的 180 x 90 度扇区，每台 96 条垂直线、64 个方位采样，以 2 Hz 发布并截断到 10 m，
+以保证 CPU 仿真环境可用。公开资料没有提供出厂束角和 M20 安装外参。
 
-**结论：** 该仿真与官方 M20 Sim-to-Real SDK 的模型坐标和低层 ONNX 策略契约一致，但当前
-DimOS 真机导航链路不运行该 ONNX 策略。因此它可用于导航集成与策略级仿真测试，**不能**作为
-“DimOS 真机轨迹、动力学或安全行为已一致”的证明。
+## 已包含组件
 
-| 审查项 | 结论 | 证据 |
+| 组件 | 位置 | 职责 |
 | --- | --- | --- |
-| 运动学、惯量、关节范围、执行器力矩范围 | 一致 | 与官方 `M20.xml` 做去除 CRLF 的差异比对；仅移除地面/灯光、调整网格路径和碰撞可见组，并添加相机、命名传感器和 `home` 关键帧 |
-| ONNX 二进制与接口 | 一致 | 与上游 `policy.onnx` 的 SHA-256 均为 `0ac99f3093d4a984d7587b88d57300cbf7ec2f788401dfa1570d1e4800568f6b`；接口为 `obs [1,57] -> actions [1,16]` |
-| 低层策略适配 | 一致 | DimOS 与官方 `M20PolicyRunner` 均采用相同关节排列、观测缩放、动作缩放、`Kp=[80,80,80,0]`、`Kd=[2,2,2,0.6]` 和腿位置/轮速度混合控制 |
-| 策略频率 | 一致 | 官方为 5 ms 状态机加 4 倍 decimation，即 20 ms；DimOS 为 1 ms 物理步长、20 个子步，即 20 ms |
-| 真机编码器坐标 | 设计上正确，但非实测 | 官方 SDK 在进入策略前使用各关节方向和零位偏置把 DDS 编码器值转换到模型坐标；DimOS 已在 MuJoCo 模型坐标中运行，因此不应再次施加硬件偏置 |
-| DimOS 仿真与 DimOS 真机控制链 | **不一致，尚未标定** | 仿真将 `cmd_vel` 直接传给 ONNX；真机 `M20Connection` 通过 Patrol UDP 高层接口发送归一化轴指令，并不运行 ONNX |
-| 真机速度尺度与符号 | 未验证 | 真实连接当前使用 `max_linear=1.0`、`max_angular=1.5`；官方 RL 键盘路径使用 `0.7/0.5/0.7`。真实连接代码也明确标注横移和偏航符号未验证 |
-| 电机与地面接触动力学 | 未验证 | MuJoCo 保留官方刚体、摩擦和力矩限制，但未建模实机固件内环、电机带宽、电流/温度保护、通信延迟、轮胎与地面参数或传感器噪声 |
+| 官方 MJCF 和网格 | `assets/` | M20 运动学、动力学、碰撞、执行器和可视几何 |
+| 官方 ONNX 策略 | `assets/deeprobotics_m20_policy.onnx` | 57 维观测到 16 维运动动作 |
+| MuJoCo 策略适配 | `dimos/simulation/mujoco/policy.py` | 策略观测、关节映射及腿位置/轮速度混合控制 |
+| 仿真连接 | `mujoco_sim.py` | M20 话题发布和仅用于仿真的偏航命令适配 |
+| 传感器与规划配置 | `config/mujoco_sim.yaml` | 两个仿真蓝图使用的默认运行参数 |
+| Rerun 布局 | `blueprints/basic.py` | 前视相机、3D 布局和仅影响显示的限频 |
+| 导航蓝图 | `nav/m20_simple_nav.py`、`nav/m20_dan_nav.py` | 实车与仿真的 Simple A* 和 DAN 组合 |
 
-在获得同一 `cmd_vel` 序列的实机里程计、IMU、关节状态和视频对照前，不得使用该仿真验收真实
-速度、转弯半径、制动距离、越障能力或安全距离。建议先以低速直行、横移和原地转向分别验证符号和
-尺度，再记录同一段轨迹进行时序对齐和误差比较；需要低层 Sim-to-Real 验证时，应使用官方 SDK 的
-`JOINTS_DATA` / `JOINTS_CMD` 链路及已授权的 SDK 模式。
+保留的 `nav/` 文件职责互不重复：
 
-## 已知运动限制
+| 路径 | 职责 |
+| --- | --- |
+| `m20_simple_nav.py` | 实车与仿真的 Simple Nav 蓝图 |
+| `m20_dan_nav.py` | 实车与仿真的 DAN 导航蓝图 |
+| `moving_obstacle.py` | Simple Nav 仿真使用的可复现 mocap 人物刺激源 |
+| `odom2posestamped.py` | DAN 链路需要的里程计到位姿适配器 |
+| `m20_map_save.py` | 完整的实体 M20 地图录制蓝图 |
+| `map_save/` | `m20-map-save` 使用的原生点云累积模块 |
+| `test_m20_*.py` | 当前蓝图、传感器配置与移动人物回归测试 |
+| `mujoco_sim.md` | 运行与参数参考 |
 
-本仓库刻意保持官方 M20 ONNX 不变。VM 直接 MuJoCo 测试已暴露一个待解决问题：前进跟踪稳定，
-但 `0.2 m/s` 横移命令的横移响应很小；最大横移命令伴随明显后退耦合；`+0.7` 与 `-0.7` 偏航命令的
-响应显著不对称。手工施加互为相反数的四轮速度目标仍呈近似镜像偏航，而官方 ONNX 对正负偏航命令
-并不产生镜像的轮子目标。
+## 支持的蓝图
 
-横移与偏航跟踪目前均视为未验证，不能用于自主导航性能或安全验收。这里明确暴露该限制；在与官方
-runner 和实体机器对照确定正确的策略级修复前，官方 ONNX、MJCF 和控制映射均保持不变。
+下表只覆盖 `dimos.robot.deeprobotics.m20` 目录负责的蓝图。
+`dimos.robot.m20` 和 `dimos.robot.m20_native` 中的同名近似入口属于其他集成，不在本文范围内。
 
-## 测试汇总与优化方向
-
-| 范围 | 结果 | 说明 |
+| 蓝图 | 运行目标 | 用途 |
 | --- | --- | --- |
-| 官方来源与策略 | 通过 | 已审计 BSD-3-Clause 来源；ONNX 与上游逐字节一致，接口为 `obs [1,57] -> actions [1,16]` |
-| 模型与控制契约 | 通过 | 已核对 `nq=23`、`nv=22`、`nu=16`、关节树、惯量、限制、力矩范围、映射、PD 增益及 20 ms 策略周期 |
-| 渲染与合成传感器 | 通过 | 前视 RGB、前后两台朝外的 96 通道 180 x 90 度射线扇区、非空点云及 `(0, 1)` 几何组下无机器人自扫描 |
-| DimOS 集成 | 通过 | M20/MuJoCo 扩展套件为 70 个默认测试加 1 个显式 `mujoco` 测试；连接 Rerun 的 Simple Nav 从 `(-1.197, 1.002)` 到达 `(0, 1)`，期间 RGB、雷达、局部图、全局图和代价地图持续刷新 |
-| 打包与文档 | 通过 | wheel 含 21 个 M20 资产；pre-commit、LFS、大文件和 doclinks 均通过 |
-| 静止与前进 | 通过 | 零命令保持站立；`[0.2,0,0]` 3 秒前进 `+0.4884 m`，横向漂移 `-0.0018 m` |
-| 横移与偏航跟踪 | 待解决 | 小横移响应很弱；最大横移有后退耦合；正负偏航响应显著不对称 |
-| 实车策略 | 未验证 | 官方发布的实机流程加载同一 `policy/policy.onnx`；当前实体机器不可达，尚未完成只读哈希核验 |
+| `m20` | 实体 M20，可下发命令 | 基础连接、TF、前后图像可视化与 Rerun |
+| `m20-simple-nav` | 实体 M20，可下发命令 | 实体机器人 Simple A* 导航 |
+| `m20-dan-nav` | 实体 M20，可下发命令 | 实体机器人 MLS 与 DAN 导航 |
+| `m20-map-save` | 实体 M20，可下发命令 | 累积已配准 SLAM 点云，并在正常退出时保存 PCD |
+| `m20-dds-rerun` | M20 本体，只读传感器 | 将雷达、IMU 和里程计从 drdds 转接至 LCM 与 Rerun |
+| `m20-simple-nav-sim` | MuJoCo | 使用官方 M20 资产、Simple Nav 和移动人物的仿真 |
+| `m20-dan-nav-sim` | MuJoCo | 使用官方 M20 资产、MLS 和 DAN 控制的仿真 |
 
-当前只验收模型加载、前进主导运动、合成传感器、建图输入、导航连通性和进程生命周期；不能用此仿真
-验收横移/偏航跟踪、自主导航性能或安全间距。
+> [!WARNING]
+> 四个可下发命令的实车蓝图都会实例化 `M20Connection`，能够向硬件发送命令。运行时必须
+> 遵循机器人网络、操作员、遥控急停和空旷区域规范，不能把仿真限制当作实车安全限制。
 
-后续顺序是：先在官方 runner 复现带符号命令矩阵；再采集实体 M20 的匹配关节、IMU、里程计、视频和
-策略哈希；最后才请求修正策略或以平衡横移/正负偏航目标和左右对称数据增强重新训练。未完成对照前，
-不要修改关节符号或 PD 增益。
+地图保存蓝图默认写入 `nav/map_save/m20_accumulated_map.pcd`。它是独立的实体建图流程，
+不是第二套导航实现。
 
-## 已包含内容
+## 运行架构
 
-| 组件 | 位置 | 用途 |
+1. 遥操作或导航控制器发布 `cmd_vel`。
+2. `M20MujocoSimConnection` 将命令转发给 MuJoCo 子进程。
+3. `M20OnnxController` 构造官方 57 维观测，每 20 ms 运行一次 ONNX，并输出
+   12 个腿部位置目标和 4 个轮子速度目标。
+4. MuJoCo 发布里程计、前视 RGB 及前后合并的合成点云。
+5. 同一个 DimOS 组合中的建图、规划、控制、TF 和 Rerun 模块消费这些数据。
+
+| 蓝图 | 规划与跟踪链路 | 移动人物 |
 | --- | --- | --- |
-| 官方 MJCF | `dimos/robot/deeprobotics/m20/assets/deeprobotics_m20.xml` | 机器人运动学、惯量、碰撞、执行器、相机及站立关键帧 |
-| 官方网格 | `dimos/robot/deeprobotics/m20/assets/meshes/` | 16 自由度 M20 的可视模型 |
-| 官方 ONNX 策略 | `dimos/robot/deeprobotics/m20/assets/deeprobotics_m20_policy.onnx` | 行走策略，输入 `obs [1,57]`，输出 `actions [1,16]` |
-| DimOS M20 控制器 | `dimos/simulation/mujoco/policy.py` | 将导航速度指令转换为官方 M20 策略观测，并执行腿轮混合控制 |
-| 模型加载器 | `dimos/simulation/mujoco/model.py` | 加载 M20 资产，使用 1 ms 物理步长并选择 M20 控制器 |
-| 仿真配置 | `dimos/robot/deeprobotics/m20/config/mujoco_sim.yaml` | 传感器与 M20 仿真规划边界 |
+| `m20-simple-nav-sim` | `CostMapper -> ReplanningAStarPlanner -> LocalPlanner/PController` | 默认开启 |
+| `m20-dan-nav-sim` | `MLSPlannerNative -> DanLocalPlanner -> DanHolonomicTC` | 未包含 |
 
-这些资产随分支提交，也会被打包进 wheel。ONNX 文件是普通 Git 文件，因此使用
-`GIT_LFS_SKIP_SMUDGE=1` 获取代码后仍可以运行本 M20 仿真。
+两个仿真蓝图都会关闭 MuJoCo 自带窗口，`--rerun-open` 只控制 Rerun Viewer。
+仿真蓝图均不实例化 `M20Connection`，因此不会向实体机器人发送命令。
 
-## 快速安装与启动
+## 安装
 
-请使用干净工作区。不要直接向包含其他 M20 导航改动的工作区写入这些文件；应合并或
-cherry-pick 官方 M20 集成提交。
+先按仓库的 [Ubuntu 安装指南](/docs/installation/ubuntu.md)准备系统依赖、Nix 和原生构建环境。
+随后为源码工作区安装 CPU ONNX 与仿真依赖：
 
 ```sh skip
-git clone https://github.com/T-Markus-Liang/dimos_m20.git ~/work/dimos_m20
-cd ~/work/dimos_m20
-git fetch origin codex/m20-official-mujoco-model
-git switch --track origin/codex/m20-official-mujoco-model
-uv sync --extra all
+git clone https://github.com/dimensionalOS/dimos.git
+cd dimos
+uv sync --extra cpu --extra sim
+source "$HOME/.cargo/env"
 ```
 
-在启动蓝图前确认官方模型和策略均已就位：
+审核尚未合并的 PR 时，应改用贡献者 fork 和待审分支。不要把个人 fork 或临时集成分支
+写入正式部署脚本。
+
+启动前确认资产和 Python 环境可用：
 
 ```sh skip
 test -s dimos/robot/deeprobotics/m20/assets/deeprobotics_m20.xml
 test -s dimos/robot/deeprobotics/m20/assets/deeprobotics_m20_policy.onnx
-uv run --no-sync python -c 'from dimos.simulation.mujoco.model import _get_m20_asset_dir; print(_get_m20_asset_dir())'
+uv run --no-sync python -c \
+  'from dimos.simulation.mujoco.model import _get_m20_asset_dir; print(_get_m20_asset_dir())'
 ```
 
-启动推荐的简单导航仿真：
+MuJoCo 模型本身不需要 ROS 2，也不需要另装 DeepRobotics SDK；导航链路仍需要 DimOS
+标准的原生建图和规划工具。实体机上的 `m20-dds-rerun` 是独立部署，需要机器人 drdds SDK
+和对应的原生 CMake 工具链。
+
+## 启动仿真
+
+切换蓝图前先停止旧协调器：
 
 ```sh skip
-cd ~/work/dimos_m20
-uv run --no-sync dimos --rerun-open none run m20-simple-nav-sim
-```
-
-需要测试 DAN 规划器和全向轨迹控制器时，启动：
-
-```sh skip
-cd ~/work/dimos_m20
-uv run --no-sync dimos --rerun-open none run m20-dan-nav-sim
-```
-
-切换蓝图前先停止旧的 DimOS 进程：
-
-```sh skip
-cd ~/work/dimos_m20
 uv run --no-sync dimos stop
 ```
 
-## 前置条件
-
-| 条件 | 原因 | 检查命令 |
-| --- | --- | --- |
-| Linux x86_64 或 Linux aarch64 | DimOS 与 MuJoCo 的受支持运行平台 | `uname -m` |
-| Python 与 uv | 安装锁定的 DimOS 环境 | `uv --version` |
-| Git | 获取分支及项目历史 | `git --version` |
-| Git LFS | DimOS 中其他资产可能依赖 LFS，本 M20 ONNX 不依赖 | `git lfs version` |
-| DimOS 原生工具 | 光线追踪需要；DAN 还需要 MLS 规划器 | `nix --version`、`cargo --version` |
-| Headless EGL 或显示服务 | MuJoCo RGB/深度渲染需要 | `echo "$DISPLAY"` 或 `echo "$MUJOCO_GL"` |
-
-M20 模型本身不需要 ROS 2 进程，也不需要额外安装 DeepRobotics SDK。DimOS 会直接加载仓库中
-提交的 MJCF 与 ONNX 策略。
-
-在新机器上，先完成仓库标准的 DimOS 原生构建环境配置，再判断是否为 M20 模型问题。
-`m20-simple-nav-sim` 需要光线追踪原生可执行文件；`m20-dan-nav-sim` 还需要 MLS 规划器可执行文件。
-缺少 `nix`、Rust 工具链不兼容或缺少原生构建产物，都属于环境问题而不是 M20 资产集成问题。
-
-## 运行架构
-
-1. 导航规划器或遥操作向 `cmd_vel` 发布速度命令。
-2. `M20MujocoSimConnection` 将命令发送给共享内存中的 MuJoCo 进程。
-3. `M20OnnxController` 将命令转换为官方 M20 ONNX 策略所需的观测，再输出腿部位置和轮子速度力矩。
-4. MuJoCo 的 RGB/深度相机发布 `color_image` 与 `dimos/slam_aligned_points`，供建图和导航模块消费。
-
-DimOS 适配器默认启用以下相机：
-
-| 相机 | 用途 |
-| --- | --- |
-| `head_camera` | RGB `color_image` |
-| `lidar_front_camera` | 前向合成深度 |
-| `lidar_rear_camera` | 后向合成深度 |
-
-MJCF 中保留的左/右深度相机默认不参与渲染。可视几何使用 MuJoCo 的 `2` 组，碰撞几何使用 `3` 组。
-默认深度配置只渲染 `(0, 1)` 组，避免机器人自身进入点云后被地图膨胀为障碍物。
-
-## 模型与策略契约
-
-以下参数是集成契约的一部分。只改模型、策略或控制器中的一项，可能会导致模型能渲染但无法安全运动。
-
-| 契约项 | 值 |
-| --- | --- |
-| 广义位置 / 速度维度 | `nq=23`、`nv=22` |
-| 执行器数量 | `nu=16` |
-| 机器人执行器顺序 | FL、FR、HL、HR；每条腿为 hip-x、hip-y、knee、wheel |
-| 策略观测 | 57 个值：角速度、投影重力、命令、关节状态、上一帧动作 |
-| 策略动作 | 16 个值：12 个腿部位置目标与 4 个轮子速度目标 |
-| 物理 / 策略频率 | 1 ms 物理步长，20 ms 策略更新 |
-| 仿真初始姿态 | 0.58 m 基座高度的 M20 `home` 站立关键帧 |
-| 仿真规划边界 | 0.70 m 高度、0.50 m 径向净空 |
-
-真实 M20 导航配置刻意与仿真不同：它使用 1.00 m 顶部边界和 0.55 m 硬墙净空，以覆盖裸 MuJoCo
-本体以外的实体硬件。不要为了与仿真一致而降低真实机器人的安全参数。
-
-## 配置与临时覆盖
-
-修改
-[mujoco_sim.yaml](/dimos/robot/deeprobotics/m20/config/mujoco_sim.yaml)
-可保存传感器和仿真边界配置，修改后需重启 DimOS。临时测试无需改源码：
+使用 headless EGL MuJoCo，并打开原生 Rerun Viewer：
 
 ```sh skip
-cd ~/work/dimos_m20
+MUJOCO_GL=egl uv run --no-sync dimos --rerun-open native run m20-simple-nav-sim
+```
+
+无桌面服务器或 CI 使用：
+
+```sh skip
+MUJOCO_GL=egl uv run --no-sync dimos --rerun-open none run m20-simple-nav-sim
+```
+
+测试 DAN 链路时替换蓝图名：
+
+```sh skip
+MUJOCO_GL=egl uv run --no-sync dimos --rerun-open native run m20-dan-nav-sim
+```
+
+如果 SSH 启动的进程无法继承桌面环境，先以 `--rerun-open none` 启动 DimOS，再从桌面环境
+单独打开 Viewer：
+
+```sh skip
+uv run --no-sync dimos-viewer --connect rerun+http://127.0.0.1:9877/proxy
+```
+
+目标点测试、录制及进程清理见 [运行参考](/dimos/robot/deeprobotics/m20/nav/mujoco_sim.md)。
+
+## 配置归属
+
+默认运行配置是 [`config/mujoco_sim.yaml`](/dimos/robot/deeprobotics/m20/config/mujoco_sim.yaml)。持久修改应写入该文件，
+随后重启 DimOS。仿真蓝图导入时会校验 YAML；未知字段和非法范围会使启动失败，不会被静默忽略。
+
+| YAML 节 | 使用者 | 配置内容 |
+| --- | --- | --- |
+| `m20mujocosimconnection` | 两个仿真蓝图 | RGB、合成雷达、人物碰撞开关和仿真偏航适配 |
+| `m20movingobstacle` | 仅 Simple Nav | 仿真人物路线、速度、频率及接近机器人时的行为 |
+| `mlsplannernative` | 两个仿真蓝图 | 仿真机器人高度和墙体径向净空 |
+| `replanningastarplanner` | 仅 Simple Nav | 原始路径诊断、约束平滑、回退及 shadow validator |
+
+临时覆盖使用模块生成名称作为前缀：
+
+```sh skip
 uv run --no-sync dimos --rerun-open none run m20-simple-nav-sim \
   --option m20mujocosimconnection.pointcloud_fps=1.0 \
   --option m20movingobstacle.enabled=false
 ```
 
-默认配置只发布 640 x 360、10 Hz 的前视 RGB，以及 2 Hz 的前/后合并点云。每台模拟 Airy 使用
-128 个方位采样、96 个垂直通道、朝外的 180 x 90 度扇区、0.1 m 最小距离和 10 m 运行截断。实物
-Airy 为 360 x 90 度、驱动支持 60 m，点流也远比仿真稠密；这里降低覆盖与发布频率是为了保留前后
-安装方向并保持导航仿真实时性。当前尚未复现出厂非均匀束角、扫描时序、噪声、运动畸变、遮挡和 M20
-精确安装外参。移动 mocap 人物对传感器可见，但默认不会与 M20 发生物理碰撞。
+YAML 只提供模块参数，不能实例化模块。例如 `M20MovingObstacle` 必须仍在
+`m20-simple-nav-sim` 蓝图中，其 YAML 配置才会生效。它驱动的是 mocap 人物，不是机器人
+急停或避障安全模块。
 
-仿真配置会把偏航命令放大 `2.0` 倍，并限制在 `1.6 rad/s`。因此 Viewer 普通 teleop 会从
-`0.8` 映射到 `1.6 rad/s`，Shift 快速模式仍封顶为 `1.6 rad/s`；Simple Nav 跟踪轨迹时的
-`0.55 rad/s` 上限会映射到 `1.1 rad/s`。该适配只作用于仿真命令，不修改官方 ONNX 或实车参数。
+并非所有仿真属性都由 YAML 控制：
 
-## 验证清单
+| 属性 | 配置真源 | 当前状态 |
+| --- | --- | --- |
+| 传感器安装位置与朝向 | `assets/deeprobotics_m20.xml` | DimOS 近似值，不是实测 M20 外参 |
+| 相机光学 TF 与 `CameraInfo` | `tf.py` | 待标定；当前静态 1280 x 720 内参与 640 x 360 仿真图像未统一 |
+| 射线生成算法 | `dimos/simulation/mujoco/mujoco_process.py` | 共享实现，修改时必须配套测试 |
+| Rerun 布局和仅显示用降采样 | `blueprints/basic.py` | 仿真使用仅前视相机布局 |
+| 策略周期、增益与关节映射 | `dimos/simulation/mujoco/policy.py` | 官方策略契约，不是普通调参项 |
+| 机器人结构与动力学 | MJCF 与 ONNX 资产 | 没有上游或实机证据时不要修改 |
 
-修改模型、控制器或配置后，执行以下检查：
+完整 YAML 当前值与约束见[运行参数参考](/dimos/robot/deeprobotics/m20/nav/mujoco_sim.md#parameter-reference)。
+
+## 验证方案
+
+### 自动化测试
+
+测试前停止所有 DimOS、MuJoCo、Rerun、建图和规划进程。执行当前 M20 与共享 MuJoCo 回归集：
 
 ```sh skip
-cd ~/work/dimos_m20
-uv run --no-sync python -m pytest -q \
+MUJOCO_GL=egl uv run --no-sync python -m pytest -q \
+  dimos/robot/deeprobotics/m20 \
   dimos/simulation/mujoco/test_m20_policy.py \
   dimos/simulation/mujoco/test_mujoco_process.py \
-  dimos/robot/deeprobotics/m20/nav/test_m20_simple_nav_sim.py \
-  dimos/robot/deeprobotics/m20/nav/test_m20_dan_nav_sim.py
+  dimos/robot/unitree/test_mujoco_connection.py
 ```
 
-最低通过标准是：模型契约正确、控制器输出为有限值、两个蓝图均解析
-`robot_model="deeprobotics_m20"`、RGB 和点云流非空，且 MuJoCo 进程可正常启动和停止。交互测试前先做
-有限时长的 headless 启动：
+移动人物集成测试会创建 MuJoCo 场景，使用独立 marker：
 
 ```sh skip
-cd ~/work/dimos_m20
-timeout --signal=INT --kill-after=10s 30s \
-  uv run --no-sync dimos --rerun-open none run m20-simple-nav-sim
+MUJOCO_GL=egl uv run --no-sync python -m pytest -q -m mujoco \
+  dimos/robot/deeprobotics/m20
 ```
+
+交互目标点测试前先做一次有限时长的完整进程启动：
+
+```sh skip
+timeout --signal=INT --kill-after=10s 30s \
+  env MUJOCO_GL=egl uv run --no-sync dimos --rerun-open none \
+  run m20-simple-nav-sim
+```
+
+### 参考测试环境
+
+最新记录于 2026-07-26、提交
+`ee818561d9999df73b7ac8baad939a44229dff57`，测试条件如下：
+
+| 项目 | 条件 |
+| --- | --- |
+| 主机 | Ubuntu 22.04.5 LTS aarch64 VM，14 个 Apple 虚拟 CPU，62 GiB 内存 |
+| MuJoCo / Rerun SDK | 3.5.0 / 0.32.0-alpha.1 |
+| MuJoCo 渲染 | Headless EGL |
+| Viewer | VM 桌面中的原生 Rerun，OpenGL 为 `llvmpipe` 软件渲染 |
+| 场景/配置 | 默认 office 场景和仓库内 `mujoco_sim.yaml`；前视 RGB、前后雷达、移动人物开启 |
+| 进程规范 | 每次运行前停止已有 DimOS/MuJoCo/Rerun 进程 |
+
+### 参考提交上的测试结果
+
+| 测试项 | 输入与条件 | 结果 |
+| --- | --- | --- |
+| M20/共享 MuJoCo 自动化测试 | 上述命令，默认 marker | `81 passed, 1 deselected`，7.95 s |
+| 显式 MuJoCo 障碍物场景 | `-m mujoco dimos/robot/deeprobotics/m20` | `1 passed, 53 deselected`，7.05 s |
+| Simple Nav 冒烟测试 | 运行 `m20-simple-nav-sim` 30 s，EGL，不开 Viewer | 11 个模块全部启动；ONNX 加载成功；RGB 7.70-7.91 FPS；雷达 1.98-1.99 Hz；人物暂停、改道和恢复均触发；退出后无残留进程或监听端口 |
+| DAN 冒烟测试 | 运行 `m20-dan-nav-sim` 30 s，EGL，不开 Viewer | 12 个模块、voxel 建图器、MLS 规划器、DAN 控制器、ONNX 和 MuJoCo 均启动；退出后无残留进程或监听端口 |
+| 模型契约 | 直接加载 MJCF | `nq=23`、`nv=22`、`nu=16`；关节/执行器及 `obs [1,57] -> actions [1,16]` 均通过 |
+| 静止 | 零命令 2 s | 基座由 0.58 m 稳定到 0.5636 m；控制输出有限且保持站立 |
+| 前进 | 稳定后执行 `[0.2,0,0]` 3 s | 前进 `+0.4884 m`，横移 `-0.0018 m`，保持站立 |
+| 当前传感器时序 | 640 x 360 RGB 8 FPS；两台 64 x 96 雷达 2 Hz；Viewer 开启 | RGB 约 7.73 FPS，P95 帧间隔 133.5 ms，最大 135.6 ms；合并点云约 1.8-2.0 Hz |
+| Rerun 布局 | 仿真仅前视 RGB；图像实体从 3D 排除 | 不再出现空后视相机加载页和红色 `3D -> color_image` 类型不匹配；稳定后 Viewer CPU 约 2-3% |
+| 导航目标 | 从约 `(-2.457,0.977)` 前往 `(-3.35,-0.51)` | 进入 `path_following`，运动到约 `(-3.270,-0.258)` 并发布 `goal_reached` |
+| 普通 teleop 偏航 | `angular.z=+0.8` 与 `-0.8` 各 3 s；放大 2.0，封顶 1.6 | 约 `+0.585 rad` 与 `-1.112 rad`；两方向可转，但响应仍不对称 |
+
+这些是特定场景的结果，不是统计性能保证。直接运动数据采集于官方资产初次集成阶段；此后官方
+MJCF、ONNX、策略适配和 20 ms 策略周期均未改变。
+
+## 已知限制
+
+1. **不能证明实机等价。** DimOS 实车通过 Patrol UDP 高层接口控制，仿真则把速度命令输入
+   官方低层 ONNX。真实速度、转弯半径、制动、通过性和安全距离均未验证。
+2. **横移和正负偏航保真度仍待解决。** 受控 3 s 测试中，`[0,0.2,0]` 只产生
+   `+0.0270 m` 横移；`[0,0.5,0]` 虽可横移，但耦合了 `-0.2337 m` 后退。
+   `+0.7` 与 `-0.7` 偏航分别得到 `+0.2200` 和 `-0.7311 rad`。追踪结果表明不对称
+   轮速目标来自官方 ONNX，而手工镜像轮速可得到近似镜像偏航。因此当前不修改官方策略。
+3. **传感器标定是近似值。** 公开资料没有 Airy DIFOP 束角、M20 雷达/相机外参、时序、噪声、
+   运动畸变及盲区模型；仿真还主动降低了方位密度、距离和更新率。
+4. **相机标定尚未统一。** `tf.py` 仍发布待标定的 1280 x 720 内参，而仿真图像为
+   640 x 360；当前图像/3D 叠加不能用于标定级投影测量。
+5. **软件渲染仍可能出现孤立卡顿。** 在 `llvmpipe` 下，全局地图重计算或目标切换仍可能
+   产生偶发长帧，但此前持续出现的加载和卡顿已消除。
+6. **移动人物只是感知刺激源。** 默认关闭碰撞，因为受控 mocap 刚体可能不真实地推倒机器人。
+   接近逻辑只让人物暂停和改道，不会停止 M20。
+7. **部分全仓测试依赖外部环境。** 一个继承的 `office_lidar` 测试需要私有 LFS 凭据，
+   与 M20 无关的 Go2/FastLIO 蓝图参数检查也可能提前失败。应将这些记录为测试环境排除项，
+   不能算作 M20 通过项。
+8. **限时退出仍有共享内存清理警告。** 30 秒 SIGINT 冒烟测试结束时，Python
+   `resource_tracker` 报告 7 个 shared-memory 对象待清理。退出后没有残留子进程或端口，
+   但优雅关闭阶段的共享内存生命周期仍需后续调查。
+
+不要为了掩盖上述限制而直接调整关节符号、增益、MJCF 动力学或 ONNX。正确顺序是在官方 runner
+复现命令矩阵，并采集同步的实体 M20 里程计、IMU、关节状态和视频，再决定模型或策略改动。
 
 ## 录制与回放
 
-录制 `.rrd` 时必须先启动 Rerun，再启动 DimOS，确保录制器先占用端口 `9877`。完整的启动顺序、
-SQLite `nav-record` 的限制与回放命令见
-[M20 MuJoCo 运行指南的录制与回放章节](/dimos/robot/deeprobotics/m20/nav/mujoco_sim.md#recording-and-replay)。
+需要保存 `.rrd` 时，外部 Rerun 录制器必须在 DimOS 启动前占用 `9877` 端口。
+SQLite `nav-record` 必须在蓝图启动时组合，并且只录制显式连接的数据流。完整命令、数据范围和
+回放限制见[运行参考](/dimos/robot/deeprobotics/m20/nav/mujoco_sim.md#recording-and-replay)。
 
 ## 常见问题
 
-| 现象 | 可能原因 | 处理方式 |
-| --- | --- | --- |
-| `Unknown robot policy: deeprobotics_m20` | 当前代码早于集成提交 | 获取并切换 `codex/m20-official-mujoco-model`，或合并提交 `014403f5` |
-| `Error opening file '*.STL'` | 工作区或 wheel 缺少资产 | 检查 `assets/meshes/`，然后执行 `uv sync` |
-| ONNX session 无法加载 | 策略缺失、损坏，或替换了其他 M20 策略 | 从受跟踪分支恢复 `deeprobotics_m20_policy.onnx`，并检查其 57/16 接口 |
-| 光线追踪报 `nix: not found` | DimOS 原生环境不完整 | 安装/配置 Nix，或使用已完成原生构建的工作区 |
-| Cargo 无法解析 `Cargo.lock` | Rust/Cargo 版本低于仓库 lockfile 要求 | 更新 Rust/Cargo 后重新构建 MLS 可执行文件 |
-| 机器人出现在自己的点云中 | 深度几何组包含 `2` 或 `3` | 保持 `pointcloud_geom_groups: [0, 1]` |
-| M20 在拥挤办公场景中不动 | 出生点有障碍，或运动命令未到达 `cmd_vel` | 从配置的 `(-1, 1)` 出生点测试，检查 `dimos/slam_odom`，再检查 `cmd_vel` |
-| 同事称其为 M20 Pro | 公开来源只标识为 M20 | 在宣称仿真保真前，向硬件负责人确认机械与传感器等价性 |
+| 现象 | 原因或检查项 |
+| --- | --- |
+| `Unknown robot policy: deeprobotics_m20` | 当前代码早于 M20 集成，或缺少仿真改动 |
+| `Error opening file '*.STL'` | 检查 `assets/meshes/`，随后重新安装/同步环境 |
+| ONNX 加载失败 | 恢复受跟踪策略，并核对 SHA-256 和 57/16 接口 |
+| Headless 模式无 RGB | 设置 `MUJOCO_GL=egl`，并确认 EGL 可用 |
+| 原生 Viewer 报 `winit` 并退出 | 进程没有桌面显示环境；使用 `--rerun-open none` 或在桌面会话内单独启动 Viewer |
+| 3D 视图下图像显示红色 | 使用仿真专用 Rerun blueprint；图像实体应放在 `Spatial2DView` |
+| 点云中出现机器人自身 | 保持 `pointcloud_geom_groups: [0,1]`，排除机器人可视/碰撞组 |
+| 第二次启动变慢或端口冲突 | 执行 `dimos stop`，并确认没有残留 MuJoCo、Rerun、voxel 和 MLS 进程 |
 
-## 更新到新版官方资产
+## 更新官方资产
 
-1. 在 `assets/SOURCE.md` 记录上游仓库地址、不可变提交、许可证和精确源文件路径。
-2. 替换资产前比对 MJCF 名称、关节顺序、执行器顺序、相机名称、模型维度和 ONNX 输入/输出签名。
-3. 只有新策略契约完全一致时，才保留当前 M20 控制器映射；否则需要实现并测试新的控制器契约。
-4. 执行验证清单、两个导航蓝图各一次有限时长启动，并检查 RGB 与深度输出。
-5. 在同一提交中更新本 README、`nav/mujoco_sim.md` 和来源说明。
+1. 在 `assets/SOURCE.md` 固定上游仓库和不可变提交。
+2. 重新检查许可证兼容性，并保留上游许可证文件。
+3. 替换前比对 MJCF 名称、维度、关节、执行器、惯量、限制和 ONNX 接口。
+4. 只有关节顺序和策略契约完全一致时才复用当前控制器，否则应实现独立审核的适配器。
+5. 执行两组自动化测试、两个仿真蓝图的有限时长启动、传感器检查、遥操作方向检查和至少一个目标点。
+6. 在同一改动中更新英文 README、中文 README、运行参考和资产来源。
 
-不要用仅有可视网格的模型替代匹配的行走策略与执行器契约。外观正确但控制器不兼容的机器人，不能作为可用的导航仿真。
+只有外观正确、却没有匹配执行器与运动策略契约的模型，不是有效的机器人仿真。

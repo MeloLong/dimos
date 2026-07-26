@@ -1,313 +1,375 @@
-# DimOS Official DeepRobotics M20 MuJoCo Integration
+# DeepRobotics M20 MuJoCo Integration
 
-This is the reusable English entry point for integrating the official
-DeepRobotics M20 MuJoCo model into DimOS. It covers installation, startup,
-the model-policy contract, verification, and the boundary between simulation
-and real-robot behavior.
+This directory contains the DimOS integration for the DeepRobotics M20,
+including a MuJoCo simulation, an official locomotion policy, real-robot
+transport adapters, and navigation blueprints.
+
+> [!IMPORTANT]
+> The M20 support and the validation results documented here are experimental.
+> The simulation is suitable for navigation integration and regression testing,
+> but it is not a substitute for physical-robot calibration or safety testing.
 
 Languages: English | [Chinese](/dimos/robot/deeprobotics/m20/README.zh-CN.md)
 
-For runtime tuning, recording, replay, and the detailed sensor profile, read
-[the M20 MuJoCo runtime guide](/dimos/robot/deeprobotics/m20/nav/mujoco_sim.md)
-after completing this document.
+## Documentation Map
 
-## Reading Order
+| Document | Scope |
+| --- | --- |
+| This README | Installation, architecture, configuration ownership, validation evidence, and known limitations |
+| [MuJoCo runtime reference](/dimos/robot/deeprobotics/m20/nav/mujoco_sim.md) | Blueprint commands, Viewer operation, YAML parameter reference, recording, and troubleshooting |
+| [Asset source record](/dimos/robot/deeprobotics/m20/assets/SOURCE.md) | Upstream repository, immutable source commit, license, and DimOS-specific MJCF changes |
 
-1. **First installation:** [Scope And Model Identity](#scope-and-model-identity), [Quick Start](#quick-start), and [Prerequisites](#prerequisites).
-2. **Integration work:** [Included Components](#included-components), [Runtime Architecture](#runtime-architecture), [Model And Policy Contract](#model-and-policy-contract), and [Configuration](#configuration).
-3. **Before relying on results:** [Verification Checklist](#verification-checklist), [Control-Fidelity Review](#control-fidelity-review), [Known Motion Limitation](#known-motion-limitation), and [Validation Summary And Roadmap](#validation-summary-and-roadmap).
-4. **Operations and maintenance:** [Recording And Replay](#recording-and-replay), [Troubleshooting](#troubleshooting), and [Updating Official Assets](#updating-official-assets).
+## Scope And Provenance
 
-
-## Scope And Model Identity
-
-The assets come from the official
+The model, meshes, and locomotion policy come from the official
 [DeepRoboticsLab/sdk_deploy](https://github.com/DeepRoboticsLab/sdk_deploy)
-repository at commit `80e3d40084c4ed151ba6f88b0d55cf1d480aa45e`, under the
+repository at commit `80e3d40084c4ed151ba6f88b0d55cf1d480aa45e` under the
 BSD-3-Clause license.
 
-The public upstream repository calls the robot **M20**, a 16-DOF wheel-legged
-quadruped. It does not identify the model as M20 Pro. This integration must
-therefore not be used as evidence that a physical robot internally called M20
-Pro has identical dimensions, payload, sensors, calibration, or firmware.
+The public source calls this 16-DOF wheel-legged quadruped **M20**. It does not
+use the name M20 Pro. This integration therefore does not establish that a
+physical product called M20 Pro has identical geometry, sensors, calibration,
+firmware, or payload.
 
-The asset inventory and DimOS-specific changes are recorded in
-[SOURCE.md](/dimos/robot/deeprobotics/m20/assets/SOURCE.md). Do not replace
-the assets with an unverified third-party model or a Unitree policy.
+The vendored ONNX SHA-256 is
+`0ac99f3093d4a984d7587b88d57300cbf7ec2f788401dfa1570d1e4800568f6b`,
+which matches the policy in the pinned upstream source. The upstream deployment
+instructions also load that policy path on the robot. A deployed robot may
+still contain a vendor or site-specific replacement; verify its hash before
+claiming binary identity.
 
-The RGB camera and lidar mounts are DimOS simulation additions. The project
-hardware uses front and rear RoboSense Airy 96-beam lidars. RoboSense's
-[official product specification](https://www.robosense.ai/en/IncrementalComponents/Airy)
-defines a 360 x 90-degree hemispherical FOV, and the
-[official driver](https://github.com/RoboSense-LiDAR/rs_driver/blob/897b14d3bdb6186a75df27ba51b65b5bd5557723/src/rs_driver/driver/decoder/decoder_RSAIRY.hpp)
-defines 96-channel mode, a 0.1-60 m decoder range, and per-device calibration
-angles. Neither official source publishes the M20 mounting transforms or a
-reusable MuJoCo model, so these streams remain an explicit approximation.
-To preserve the front/rear mount directions while robot geometry is excluded
-from raycasts, the simulation models each unit as an outward-facing 180 x
-90-degree sector. This avoids two duplicate full-azimuth scans through the
-chassis; it does not redefine the real Airy's 360 x 90-degree specification.
+DimOS keeps the official robot geometry, inertial properties, joint limits,
+actuators, and policy. It removes the source scene floor and light, assigns
+geometry groups for synthetic sensing, adds named cameras and sensors, and
+adds a standing keyframe. See [the source record](/dimos/robot/deeprobotics/m20/assets/SOURCE.md) for the
+complete boundary.
 
-## Control-Fidelity Review
-
-**Conclusion:** the simulation matches the official M20 Sim-to-Real SDK's
-model-coordinate and low-level ONNX-policy contract, but the current DimOS
-real-robot navigation chain does not run that ONNX policy. It is suitable for
-navigation integration and policy-level simulation testing. It is **not**
-evidence that DimOS real-robot trajectories, dynamics, or safety behavior
-match the simulation.
-
-| Review item | Result | Evidence |
-| --- | --- | --- |
-| Kinematics, inertias, joint ranges, and actuator torque ranges | Matches | A CRLF-normalized diff against official `M20.xml` leaves only scene/light removal, mesh-path and collision-visible-group changes, plus cameras, named sensors, and the `home` keyframe |
-| ONNX binary and interface | Matches | Both the vendored file and upstream `policy.onnx` have SHA-256 `0ac99f3093d4a984d7587b88d57300cbf7ec2f788401dfa1570d1e4800568f6b`; the interface is `obs [1,57] -> actions [1,16]` |
-| Low-level policy adapter | Matches | DimOS and the official `M20PolicyRunner` use the same joint ordering, observation scaling, action scaling, `Kp=[80,80,80,0]`, `Kd=[2,2,2,0.6]`, and leg-position/wheel-velocity hybrid control |
-| Policy rate | Matches | The official stack is a 5 ms state machine with decimation 4, hence 20 ms; DimOS is a 1 ms physics step with 20 substeps, hence 20 ms |
-| Real encoder coordinates | Correct by design, not measured | The official SDK converts DDS encoder values to model coordinates using per-joint direction and zero offsets before inference; DimOS already runs in MuJoCo model coordinates and must not apply those hardware offsets again |
-| DimOS simulation versus DimOS real-robot control chain | **Does not match; uncalibrated** | Simulation sends `cmd_vel` directly to the ONNX policy. `M20Connection` sends normalized axes through the high-level Patrol UDP interface and does not execute the ONNX policy |
-| Real command scale and signs | Unverified | The real connection uses `max_linear=1.0` and `max_angular=1.5`; the official RL keyboard path uses `0.7/0.5/0.7`. The real connection code explicitly marks lateral and yaw signs as unverified |
-| Motor and ground-contact dynamics | Unverified | MuJoCo retains official rigid-body, friction, and torque-limit data, but not firmware inner loops, motor bandwidth, current/thermal protection, communication delay, tire-ground parameters, or sensor noise |
-
-Do not use this simulation to accept real speed, turning radius, braking distance,
-traversability, or safety clearances until the same `cmd_vel` sequence has been
-compared against real odometry, IMU, joint state, and video. First validate
-signs and scale with low-speed forward, lateral, and in-place turning tests,
-then time-align and compare a recorded trajectory. For low-level Sim-to-Real
-validation, use the official SDK's authorized `JOINTS_DATA` / `JOINTS_CMD`
-chain.
-
-## Known Motion Limitation
-
-This repository deliberately keeps the official M20 ONNX unchanged. A direct
-VM MuJoCo check exposed an open behavior limitation: forward tracking is
-stable, but a `0.2 m/s` lateral command has little lateral response, maximum
-lateral command has backward coupling, and `+0.7` / `-0.7` yaw commands have
-materially asymmetric responses. Manual inverse wheel targets remain nearly
-mirror-symmetric, while the official ONNX does not produce mirror-symmetric
-wheel targets for signed yaw commands.
-
-Treat lateral and yaw tracking as unvalidated. Do not use them for autonomous
-navigation performance or safety acceptance. The limitation is exposed here;
-the official ONNX, MJCF, and controller mapping are intentionally unchanged
-until a comparison with the upstream runner and physical hardware establishes
-the correct policy-level remedy.
-
-## Validation Summary And Roadmap
-
-| Area | Result | Notes |
-| --- | --- | --- |
-| Official source and policy | Pass | BSD-3-Clause source audited; vendored ONNX is byte-identical to upstream and exposes `obs [1,57] -> actions [1,16]` |
-| Model and controller contract | Pass | `nq=23`, `nv=22`, `nu=16`; joint tree, inertia, limits, torque ranges, mapping, PD gains, and 20 ms policy cadence checked against the official runner |
-| Rendering and synthetic sensors | Pass | Front RGB plus two outward-facing front/rear 96-channel, 180 x 90-degree raycast sectors, nonempty point cloud, and no robot self-scan with groups `(0, 1)` |
-| DimOS integration | Pass | Expanded M20/MuJoCo suite: 70 default tests plus 1 explicit `mujoco` test; a Rerun-attached simple-nav run reached `(0, 1)` from `(-1.197, 1.002)` while RGB, lidar, local map, global map, and costmap streams remained live |
-| Packaging and docs | Pass | Wheel contains 21 M20 assets; pre-commit, LFS, large-file, and doclinks checks passed |
-| Standstill and forward | Pass | Zero command remains upright; `[0.2,0,0]` for 3 s moves `+0.4884 m` forward with `-0.0018 m` lateral drift |
-| Lateral and yaw tracking | Open | Small lateral command has little lateral response; maximum lateral couples backward motion; signed yaw is materially asymmetric |
-| Physical robot policy | Unverified | Published real deployment loads the same upstream `policy/policy.onnx`; the current robot was unreachable for read-only hash verification |
-
-Current acceptance is limited to model loading, forward-dominant motion,
-synthetic sensors, mapping inputs, navigation wiring, and process lifecycle.
-Do not accept lateral/yaw tracking, autonomous-navigation performance, or
-safety clearance from this simulation.
-
-The next steps are: reproduce the signed-command matrix in the official runner;
-collect matched physical M20 joint/IMU/odometry/video data and policy hash; then
-request a corrected policy or retrain with balanced signed-yaw/lateral tracking
-and left/right symmetry augmentation. Do not change joint signs or gains until
-that comparison shows a DimOS-specific mismatch.
+The RGB camera and RoboSense Airy lidar simulation are DimOS additions, not
+vendor-calibrated M20 sensor models. The real Airy specification is 360 x 90
+degrees with 96-channel operation and a decoder range up to 60 m. The default
+simulation uses two outward-facing 180 x 90-degree sectors, 96 vertical lines,
+64 azimuth samples per unit, 2 Hz publication, and a 10 m cutoff to keep the
+CPU-only test environment responsive. Exact factory beam angles and M20 mount
+transforms are not available in the public sources.
 
 ## Included Components
 
-| Component | Location | Purpose |
+| Component | Location | Responsibility |
 | --- | --- | --- |
-| Official MJCF | `dimos/robot/deeprobotics/m20/assets/deeprobotics_m20.xml` | M20 kinematics, inertias, collisions, actuators, cameras, and home keyframe |
-| Official meshes | `dimos/robot/deeprobotics/m20/assets/meshes/` | Visual model for the 16-DOF M20 |
-| Official ONNX policy | `dimos/robot/deeprobotics/m20/assets/deeprobotics_m20_policy.onnx` | Locomotion policy, `obs [1,57] -> actions [1,16]` |
-| DimOS M20 controller | `dimos/simulation/mujoco/policy.py` | Converts navigation velocity commands to official M20 policy observations and hybrid leg/wheel control |
-| Model loader | `dimos/simulation/mujoco/model.py` | Loads the assets, uses 1 ms physics steps, and selects the M20 controller |
-| Simulation profile | `dimos/robot/deeprobotics/m20/config/mujoco_sim.yaml` | Sensors and M20 simulation planning envelope |
+| Official MJCF and meshes | `assets/` | M20 kinematics, dynamics, collisions, actuators, and visual geometry |
+| Official ONNX policy | `assets/deeprobotics_m20_policy.onnx` | `57`-value observation to `16`-value locomotion action |
+| MuJoCo policy adapter | `dimos/simulation/mujoco/policy.py` | Policy observation, joint mapping, and hybrid leg-position/wheel-velocity control |
+| Simulation connection | `mujoco_sim.py` | M20 topic publication and simulation-only yaw command adaptation |
+| Sensor and planner profile | `config/mujoco_sim.yaml` | Checked-in runtime values used by both simulation blueprints |
+| Rerun layout | `blueprints/basic.py` | Front-camera and 3D visualization layout and display-only rate controls |
+| Navigation blueprints | `nav/m20_simple_nav.py`, `nav/m20_dan_nav.py` | Real and simulated Simple A* and DAN compositions |
 
-The assets are tracked in Git and packaged into the wheel. The ONNX file is
-ordinary Git data, so checkout with `GIT_LFS_SKIP_SMUDGE=1` remains runnable.
+The retained `nav/` files have distinct responsibilities:
 
-## Quick Start
+| Path | Responsibility |
+| --- | --- |
+| `m20_simple_nav.py` | Real and simulated Simple Nav blueprints |
+| `m20_dan_nav.py` | Real and simulated DAN navigation blueprints |
+| `moving_obstacle.py` | Reproducible mocap-person stimulus used by Simple Nav simulation |
+| `odom2posestamped.py` | Odometry-to-pose adapter required by the DAN stack |
+| `m20_map_save.py` | Complete physical-M20 map-recording blueprint |
+| `map_save/` | Native point-cloud accumulation module used by `m20-map-save` |
+| `test_m20_*.py` | Current blueprint, sensor-profile, and moving-obstacle regression tests |
+| `mujoco_sim.md` | Runtime and parameter reference |
 
-Use a clean checkout. Do not add this integration directly to a working tree
-that contains unrelated M20 navigation work; merge or cherry-pick the M20
-integration commit instead.
+## Supported Blueprints
+
+This table covers blueprints owned by `dimos.robot.deeprobotics.m20`.
+Similarly named entries from `dimos.robot.m20` and `dimos.robot.m20_native`
+are separate integrations outside this document's scope.
+
+| Blueprint | Runtime target | Purpose |
+| --- | --- | --- |
+| `m20` | Physical M20, command capable | Base connection, TF, front/rear image visualization, and Rerun |
+| `m20-simple-nav` | Physical M20, command capable | Physical-robot Simple A* navigation |
+| `m20-dan-nav` | Physical M20, command capable | Physical-robot MLS and DAN navigation |
+| `m20-map-save` | Physical M20, command capable | Accumulate registered SLAM point clouds and save a PCD on graceful shutdown |
+| `m20-dds-rerun` | Physical M20 onboard, sensors only | Bridge onboard lidar, IMU, and odometry from drdds to LCM and Rerun |
+| `m20-simple-nav-sim` | MuJoCo | Official-M20 simulation with Simple Nav and a moving person |
+| `m20-dan-nav-sim` | MuJoCo | Official-M20 simulation with MLS and DAN control |
+
+> [!WARNING]
+> The four command-capable physical-robot blueprints instantiate
+> `M20Connection` and can send commands to hardware. Use the robot's normal
+> network, operator, remote emergency stop, and clear-area procedures. Do not
+> use simulation limits as physical safety limits.
+
+The map-save blueprint writes
+`nav/map_save/m20_accumulated_map.pcd` by default. It is a dedicated physical
+mapping workflow, not a second navigation implementation.
+
+## Architecture
+
+1. Teleoperation or a navigation controller publishes `cmd_vel`.
+2. `M20MujocoSimConnection` forwards the command to the MuJoCo subprocess.
+3. `M20OnnxController` builds the official 57-value observation, evaluates the
+   ONNX policy every 20 ms, and applies 12 leg-position and four wheel-velocity
+   targets.
+4. MuJoCo publishes odometry, front RGB, and a merged front/rear synthetic
+   point cloud.
+5. Mapping, planning, control, TF, and Rerun modules consume those streams in
+   the same DimOS composition.
+
+| Blueprint | Planning and tracking chain | Moving person |
+| --- | --- | --- |
+| `m20-simple-nav-sim` | `CostMapper -> ReplanningAStarPlanner -> LocalPlanner/PController` | Enabled by default |
+| `m20-dan-nav-sim` | `MLSPlannerNative -> DanLocalPlanner -> DanHolonomicTC` | Not included |
+
+Both simulation blueprints force the MuJoCo window off. `--rerun-open` controls
+only the Rerun Viewer. Neither simulation blueprint instantiates
+`M20Connection`, so it cannot send commands to a physical robot.
+
+## Installation
+
+Follow the repository's [Ubuntu installation guide](/docs/installation/ubuntu.md)
+for system packages, Nix, and native build prerequisites. A source checkout
+with the CPU ONNX and simulation extras can then be prepared with:
 
 ```sh skip
-git clone https://github.com/T-Markus-Liang/dimos_m20.git ~/work/dimos_m20
-cd ~/work/dimos_m20
-git fetch origin codex/m20-official-mujoco-model
-git switch --track origin/codex/m20-official-mujoco-model
-uv sync --extra all
+git clone https://github.com/dimensionalOS/dimos.git
+cd dimos
+uv sync --extra cpu --extra sim
+source "$HOME/.cargo/env"
 ```
 
-Verify that the model and policy are present before starting a blueprint:
+During review of an unmerged branch, replace the clone URL and switch command
+with the contributor fork and PR branch under test. Do not hard-code a personal
+fork or a temporary integration branch into deployment automation.
+
+Confirm that the committed assets and Python environment are usable:
 
 ```sh skip
 test -s dimos/robot/deeprobotics/m20/assets/deeprobotics_m20.xml
 test -s dimos/robot/deeprobotics/m20/assets/deeprobotics_m20_policy.onnx
-uv run --no-sync python -c 'from dimos.simulation.mujoco.model import _get_m20_asset_dir; print(_get_m20_asset_dir())'
+uv run --no-sync python -c \
+  'from dimos.simulation.mujoco.model import _get_m20_asset_dir; print(_get_m20_asset_dir())'
 ```
 
-Start the simple-navigation simulation:
+The MuJoCo model does not require ROS 2 or a separate DeepRobotics SDK. The
+navigation stack does require the normal DimOS native mapping/planning tools.
+The onboard `m20-dds-rerun` bridge is a separate physical deployment and does
+require the robot's drdds SDK plus its native CMake toolchain.
+
+## Run The Simulation
+
+Stop an earlier coordinator before starting another blueprint:
 
 ```sh skip
-cd ~/work/dimos_m20
-uv run --no-sync dimos --rerun-open none run m20-simple-nav-sim
-```
-
-Start the DAN planner and holonomic-controller simulation:
-
-```sh skip
-cd ~/work/dimos_m20
-uv run --no-sync dimos --rerun-open none run m20-dan-nav-sim
-```
-
-Stop a prior DimOS process before changing blueprints:
-
-```sh skip
-cd ~/work/dimos_m20
 uv run --no-sync dimos stop
 ```
 
-## Prerequisites
-
-| Requirement | Reason | Check |
-| --- | --- | --- |
-| Linux x86_64 or Linux aarch64 | Supported DimOS and MuJoCo runtime platform | `uname -m` |
-| Python and uv | Installs the locked DimOS environment | `uv --version` |
-| Git | Retrieves project history and branches | `git --version` |
-| Git LFS | Other DimOS assets can use LFS, though this ONNX does not | `git lfs version` |
-| DimOS native tools | Ray tracing requires them; DAN also needs the MLS planner | `nix --version`, `cargo --version` |
-| Headless EGL or a display | MuJoCo RGB and depth rendering | `echo "$DISPLAY"` or `echo "$MUJOCO_GL"` |
-
-The M20 model itself needs neither a ROS 2 process nor a separate
-DeepRobotics SDK installation. DimOS directly loads the committed MJCF and
-ONNX policy. A missing `nix`, incompatible Rust/Cargo, or missing native
-executable is a DimOS environment issue, not an M20 asset issue.
-
-## Runtime Architecture
-
-1. A navigation planner or teleoperation publishes a `cmd_vel` command.
-2. `M20MujocoSimConnection` forwards it to the shared-memory MuJoCo process.
-3. `M20OnnxController` forms the official policy observation, evaluates the
-   ONNX policy, and applies leg-position and wheel-velocity PD torques.
-4. MuJoCo RGB/depth cameras publish `color_image` and
-   `dimos/slam_aligned_points` for mapping and navigation.
-
-The DimOS adapter adds `head_camera` for front RGB and uses
-`lidar_front_camera` plus `lidar_rear_camera` for active synthetic depth. The
-legacy left/right depth cameras remain in the MJCF but are not rendered by the
-default profile. Visual geometry is in MuJoCo group `2` and collision geometry
-in group `3`; the default point-cloud profile renders groups `(0, 1)` so the
-robot is not inserted into its own map.
-
-## Model And Policy Contract
-
-| Contract | Value |
-| --- | --- |
-| Generalized position / velocity dimensions | `nq=23`, `nv=22` |
-| Actuators | `nu=16` |
-| Robot actuator order | FL, FR, HL, HR; each leg is hip-x, hip-y, knee, wheel |
-| Policy observation | 57 values: angular velocity, projected gravity, command, joint state, previous action |
-| Policy action | 16 values: 12 leg position targets and 4 wheel velocity targets |
-| Physics / policy rates | 1 ms physics step, 20 ms policy update |
-| Start pose | M20 standing `home` keyframe at 0.58 m base height |
-| Simulation envelope | 0.70 m high, 0.50 m radial clearance |
-
-The real M20 navigation profile deliberately remains different: it uses a
-1.00 m overhead envelope and 0.55 m hard-wall clearance for physical hardware.
-Do not reduce real-robot safety values to match the simulator.
-
-## Configuration
-
-Edit [mujoco_sim.yaml](/dimos/robot/deeprobotics/m20/config/mujoco_sim.yaml)
-for checked-in sensor or simulation-envelope changes, then restart DimOS.
-One-off overrides do not require source edits:
+Run Simple Nav with headless EGL MuJoCo and a native Rerun Viewer:
 
 ```sh skip
-cd ~/work/dimos_m20
+MUJOCO_GL=egl uv run --no-sync dimos --rerun-open native run m20-simple-nav-sim
+```
+
+For a server or CI session without a desktop:
+
+```sh skip
+MUJOCO_GL=egl uv run --no-sync dimos --rerun-open none run m20-simple-nav-sim
+```
+
+Run the DAN stack by replacing the blueprint name:
+
+```sh skip
+MUJOCO_GL=egl uv run --no-sync dimos --rerun-open native run m20-dan-nav-sim
+```
+
+If an SSH-launched process cannot inherit the desktop session, start DimOS with
+`--rerun-open none`, then launch the Viewer from the desktop environment:
+
+```sh skip
+uv run --no-sync dimos-viewer --connect rerun+http://127.0.0.1:9877/proxy
+```
+
+See the [runtime reference](/dimos/robot/deeprobotics/m20/nav/mujoco_sim.md) for goal testing, recording, and
+process cleanup.
+
+## Configuration Ownership
+
+The checked-in runtime profile is
+[`config/mujoco_sim.yaml`](/dimos/robot/deeprobotics/m20/config/mujoco_sim.yaml). Edit it for persistent
+changes and restart DimOS. The YAML is validated when a simulation blueprint is
+imported; unknown keys and invalid ranges fail startup instead of being ignored.
+
+| YAML section | Consumed by | Configures |
+| --- | --- | --- |
+| `m20mujocosimconnection` | Both simulation blueprints | RGB, synthetic lidar, person collision flag, and simulation yaw adaptation |
+| `m20movingobstacle` | Simple Nav only | Simulated person's route, speed, update rate, and robot-proximity behavior |
+| `mlsplannernative` | Both simulation blueprints | Simulation robot height and radial wall clearance |
+| `replanningastarplanner` | Simple Nav only | Raw-path diagnostics, constrained smoothing, backtracking, and shadow validators |
+
+One-off overrides use the generated module name as the option prefix:
+
+```sh skip
 uv run --no-sync dimos --rerun-open none run m20-simple-nav-sim \
   --option m20mujocosimconnection.pointcloud_fps=1.0 \
   --option m20movingobstacle.enabled=false
 ```
 
-The normal profile publishes only front 640 x 360 RGB at 10 Hz and a merged
-front/rear point cloud at 2 Hz. Each simulated Airy uses 128 azimuth samples,
-96 vertical channels, an outward-facing 180 x 90-degree sector, a 0.1 m minimum
-range, and a 10 m runtime cutoff. The real Airy supports 360 x 90-degree
-coverage, a 60 m decoder range, and a much denser point stream; the reduced
-simulation keeps navigation tests responsive and preserves the front/rear
-mount directions. Exact factory beam angles, timing, noise, motion distortion,
-occlusion, and M20 mounting transforms are not reproduced. The mocap person is
-visible to sensors but does not collide with M20 by default.
+YAML supplies module parameters; it does not instantiate modules. For example,
+`M20MovingObstacle` must remain part of `m20-simple-nav-sim` for its YAML section
+to have any effect. It drives a mocap person and is not a robot emergency-stop
+or obstacle-avoidance safety module.
 
-The simulation profile multiplies yaw commands by `2.0` and caps them at
-`1.6 rad/s`. Normal Viewer teleop therefore maps from `0.8` to `1.6 rad/s`,
-while Shift fast mode remains capped at `1.6 rad/s`. Simple Nav's path-following
-limit maps from `0.55` to `1.1 rad/s`. This adapter changes only simulation
-commands and does not modify the official ONNX or real-robot control settings.
+Not every simulation property is YAML-controlled:
 
-## Verification Checklist
+| Property | Source of truth | Status |
+| --- | --- | --- |
+| Sensor mount positions and orientations | `assets/deeprobotics_m20.xml` | DimOS approximation; not measured M20 extrinsics |
+| Camera optical TF and `CameraInfo` | `tf.py` | TODO calibration; current static 1280 x 720 intrinsics are not synchronized with the 640 x 360 simulation stream |
+| Ray-generation algorithm | `dimos/simulation/mujoco/mujoco_process.py` | Shared implementation; change with tests |
+| Rerun layout and display-only downsampling | `blueprints/basic.py` | Simulation-specific front-camera layout |
+| Policy cadence, gains, and joint mapping | `dimos/simulation/mujoco/policy.py` | Official policy contract; not a runtime tuning surface |
+| Robot geometry and dynamics | MJCF and ONNX assets | Do not edit without upstream or physical evidence |
 
-Run this after changing the model, controller, or profile:
+The complete current YAML values and constraints are listed in the
+[runtime parameter reference](/dimos/robot/deeprobotics/m20/nav/mujoco_sim.md#parameter-reference).
+
+## Verification Procedure
+
+### Automated Tests
+
+Stop all DimOS, MuJoCo, Rerun, mapping, and planner processes before testing.
+Run the current M20 and shared MuJoCo regression set:
 
 ```sh skip
-cd ~/work/dimos_m20
-uv run --no-sync python -m pytest -q \
+MUJOCO_GL=egl uv run --no-sync python -m pytest -q \
+  dimos/robot/deeprobotics/m20 \
   dimos/simulation/mujoco/test_m20_policy.py \
   dimos/simulation/mujoco/test_mujoco_process.py \
-  dimos/robot/deeprobotics/m20/nav/test_m20_simple_nav_sim.py \
-  dimos/robot/deeprobotics/m20/nav/test_m20_dan_nav_sim.py
+  dimos/robot/unitree/test_mujoco_connection.py
 ```
 
-The minimum passing result is a valid model contract, finite controller output,
-both blueprints resolving `robot_model="deeprobotics_m20"`, nonempty RGB and
-point-cloud streams, and a MuJoCo process that starts and stops cleanly. Run a
-bounded headless startup before an interactive test:
+The moving-person integration test is marked separately because it creates a
+MuJoCo scene:
 
 ```sh skip
-cd ~/work/dimos_m20
-timeout --signal=INT --kill-after=10s 30s \
-  uv run --no-sync dimos --rerun-open none run m20-simple-nav-sim
+MUJOCO_GL=egl uv run --no-sync python -m pytest -q -m mujoco \
+  dimos/robot/deeprobotics/m20
 ```
+
+Run a bounded full-process startup before interactive goal testing:
+
+```sh skip
+timeout --signal=INT --kill-after=10s 30s \
+  env MUJOCO_GL=egl uv run --no-sync dimos --rerun-open none \
+  run m20-simple-nav-sim
+```
+
+### Reference Test Environment
+
+The latest documented validation was performed on 2026-07-26 at revision
+`ee818561d9999df73b7ac8baad939a44229dff57` with these conditions:
+
+| Item | Value |
+| --- | --- |
+| Host | Ubuntu 22.04.5 LTS aarch64 VM, 14 Apple virtual CPUs, 62 GiB RAM |
+| MuJoCo / Rerun SDK | 3.5.0 / 0.32.0-alpha.1 |
+| MuJoCo rendering | Headless EGL |
+| Viewer | Native Rerun on the VM desktop, OpenGL `llvmpipe` software rendering |
+| Scene/profile | Default office scene and committed `mujoco_sim.yaml`; front RGB, two lidar sectors, moving person enabled |
+| Process discipline | Existing DimOS/MuJoCo/Rerun processes stopped before every run |
+
+### Results Recorded On The Reference Revision
+
+| Test | Input and conditions | Result |
+| --- | --- | --- |
+| Automated M20/shared MuJoCo suite | Command above, default marker selection | `81 passed, 1 deselected` in 7.95 s |
+| Explicit MuJoCo obstacle scene | `-m mujoco dimos/robot/deeprobotics/m20` | `1 passed, 53 deselected` in 7.05 s |
+| Simple Nav smoke test | 30 s `m20-simple-nav-sim`, EGL, no Viewer | All 11 modules started; ONNX loaded; RGB 7.70-7.91 FPS; lidar 1.98-1.99 Hz; moving-person pause, redirect, and resume executed; shutdown left no process or listener |
+| DAN smoke test | 30 s `m20-dan-nav-sim`, EGL, no Viewer | All 12 modules, voxel mapper, MLS planner, DAN controller, ONNX, and MuJoCo started; shutdown left no process or listener |
+| Model contract | Direct MJCF load | `nq=23`, `nv=22`, `nu=16`; expected joint/actuator and `obs [1,57] -> actions [1,16]` policy contracts passed |
+| Standstill | 2 s zero command | Base settled from 0.58 m to 0.5636 m; finite controls; remained upright |
+| Forward motion | `[0.2, 0, 0]` for 3 s after settling | `+0.4884 m` forward, `-0.0018 m` lateral; remained upright |
+| Current sensor timing | 640 x 360 RGB at 8 FPS; two 64 x 96 sectors at 2 Hz; Viewer open | RGB about 7.73 FPS, P95 frame interval 133.5 ms, maximum 135.6 ms; merged cloud about 1.8-2.0 Hz |
+| Rerun layout | Simulation front RGB only; image entities excluded from 3D | No unused rear-camera loading view and no red `3D -> color_image` mismatch; Viewer CPU observed around 2-3% after settling |
+| Navigation goal | Goal `(-3.35, -0.51)` from approximately `(-2.457, 0.977)` | Planner entered `path_following`, robot moved to approximately `(-3.270, -0.258)`, and `goal_reached` was published |
+| Normal teleop yaw | `angular.z=+0.8` and `-0.8`, each for 3 s; scale 2.0, cap 1.6 | Approximately `+0.585 rad` and `-1.112 rad`; both directions turn, but response remains asymmetric |
+
+These are scenario results, not statistical performance guarantees. The direct
+motion measurements were collected when the official asset integration was
+introduced; the official MJCF, ONNX, policy adapter, and 20 ms policy cadence
+have remained unchanged since that run.
+
+## Known Limitations
+
+1. **No physical equivalence claim.** The DimOS real-robot path uses the Patrol
+   UDP high-level interface, while simulation sends velocity commands to the
+   official low-level ONNX policy. Real speed, turning radius, braking,
+   traversability, and safety clearance remain unvalidated.
+2. **Lateral and signed-yaw fidelity is open.** A controlled 3 s test produced
+   only `+0.0270 m` lateral motion for `[0,0.2,0]`; `[0,0.5,0]` moved laterally
+   but coupled `-0.2337 m` backward. `+0.7` and `-0.7` yaw produced `+0.2200`
+   and `-0.7311 rad`. Tracing showed asymmetric wheel targets from the official
+   ONNX, while manually mirrored wheel targets produced nearly mirrored yaw.
+   The policy is intentionally unchanged.
+3. **Sensor calibration is approximate.** Public sources do not provide Airy
+   DIFOP beam tables, M20 lidar/camera extrinsics, timing, noise, motion
+   distortion, or blind-zone models. The simulation profile intentionally
+   reduces azimuth density, range, and update rate.
+4. **Camera calibration needs consolidation.** `tf.py` still publishes TODO
+   1280 x 720 intrinsics while the simulation image is 640 x 360. Do not use the
+   current image/3D overlay for calibrated projection measurements.
+5. **Software rendering can still stall briefly.** On `llvmpipe`, heavy global
+   map updates or goal transitions can produce isolated long frames even though
+   the regular loading/stall condition has been removed.
+6. **The moving person is a perception stimulus.** Its collision is disabled
+   because a prescribed mocap body can unrealistically push over the robot. Its
+   proximity logic redirects the person; it does not stop the M20.
+7. **Broader repository checks have external dependencies.** One inherited
+   `office_lidar` test needs private LFS credentials, and unrelated Go2/FastLIO
+   blueprint-kwargs checks may fail before reaching M20 code. Record these as
+   test-environment exclusions rather than M20 passes.
+8. **Bounded shutdown reports shared-memory cleanup.** The 30 s SIGINT smoke
+   test exits with a Python `resource_tracker` warning for seven shared-memory
+   objects. No child process or listener remains afterward, but graceful
+   shared-memory lifecycle cleanup still needs investigation.
+
+Do not tune joint signs, gains, MJCF dynamics, or the ONNX policy merely to hide
+these limitations. Reproduce the command matrix in the official runner and
+collect synchronized physical M20 odometry, IMU, joint state, and video before
+changing the model-policy contract.
 
 ## Recording And Replay
 
-Start Rerun before DimOS to record an `.rrd`; the recorder must own port
-`9877` before the bridge starts. SQLite `nav-record` limitations and replay
-commands are documented in
-[the M20 MuJoCo runtime guide](/dimos/robot/deeprobotics/m20/nav/mujoco_sim.md#recording-and-replay).
+An external Rerun recorder must bind port `9877` before DimOS starts if the run
+must be saved as `.rrd`. A `nav-record` SQLite recorder must be composed at
+blueprint startup and records only explicitly connected streams. Commands,
+stream coverage, and replay limitations are documented in
+[the runtime reference](/dimos/robot/deeprobotics/m20/nav/mujoco_sim.md#recording-and-replay).
 
 ## Troubleshooting
 
-| Symptom | Likely cause | Action |
-| --- | --- | --- |
-| `Unknown robot policy: deeprobotics_m20` | Checkout predates the integration | Fetch the branch or merge commit `014403f5` |
-| `Error opening file '*.STL'` | Assets are absent from checkout or wheel | Verify `assets/meshes/`, then run `uv sync` |
-| ONNX session cannot load | Policy is absent, corrupt, or replaced | Restore the tracked `deeprobotics_m20_policy.onnx` and verify its 57/16 interface |
-| `nix: not found` | DimOS native environment is incomplete | Install/configure Nix or use a native-built checkout |
-| Cargo cannot parse `Cargo.lock` | Rust/Cargo is too old | Update Rust/Cargo and rebuild the MLS executable |
-| Robot appears in its own point cloud | Depth groups include `2` or `3` | Keep `pointcloud_geom_groups: [0, 1]` |
-| M20 does not move | Spawn is blocked or command does not reach `cmd_vel` | Test from `(-1, 1)`, inspect `dimos/slam_odom`, then inspect `cmd_vel` |
-| A colleague calls it M20 Pro | Public source identifies only M20 | Confirm mechanical and sensor equivalence with the hardware owner |
+| Symptom | Cause or check |
+| --- | --- |
+| `Unknown robot policy: deeprobotics_m20` | The checkout predates the M20 integration or is missing the simulation changes |
+| `Error opening file '*.STL'` | Verify `assets/meshes/` and reinstall/sync the environment |
+| ONNX load failure | Restore the tracked policy and verify its SHA-256 and 57/16 interface |
+| No RGB in headless mode | Set `MUJOCO_GL=egl`; verify EGL is available |
+| Native Viewer exits with `winit` | The process lacks a desktop display; use `--rerun-open none` or launch the Viewer inside the desktop session |
+| Red image under the 3D view | Use the simulation-specific Rerun blueprint; image entities belong in `Spatial2DView` |
+| Robot appears in its point cloud | Keep `pointcloud_geom_groups: [0, 1]` so robot visual/collision groups are excluded |
+| A second run is slow or fails to bind ports | Run `dimos stop`, then verify stale MuJoCo, Rerun, voxel, and MLS processes are gone |
 
 ## Updating Official Assets
 
-1. Record the upstream repository URL, immutable commit, license, and source
-   paths in `assets/SOURCE.md`.
-2. Compare MJCF names, joint and actuator order, camera names, dimensions, and
-   ONNX input/output signatures before replacing any asset.
-3. Reuse the M20 controller mapping only when the policy contract is identical;
-   otherwise implement and test a new controller contract.
-4. Run the verification checklist, a bounded startup for both blueprints, and
-   a visual RGB/depth check.
-5. Update both READMEs, `nav/mujoco_sim.md`, and the source attribution in the
-   same commit.
+1. Pin the upstream repository and immutable commit in `assets/SOURCE.md`.
+2. Recheck license compatibility and retain the upstream license file.
+3. Compare MJCF names, dimensions, joints, actuators, inertias, limits, and
+   ONNX signatures before replacing any file.
+4. Reuse the controller only if joint ordering and policy contracts are
+   identical; otherwise implement a separately reviewed adapter.
+5. Run both automated commands, bounded startup for both simulation blueprints,
+   sensor inspection, teleop direction checks, and at least one navigation goal.
+6. Update this README, the Chinese README, the runtime reference, and source
+   attribution in the same change.
 
-Never substitute a visual mesh for a matched locomotion policy and actuator
-contract. A robot that merely looks correct is not a usable navigation
-simulation.
+A visually correct mesh without its matched actuator and locomotion-policy
+contract is not a valid robot simulation.

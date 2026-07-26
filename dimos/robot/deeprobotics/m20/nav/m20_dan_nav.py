@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Simple M20 navigation stack.
+"""DAN M20 navigation stack.
 
 This blueprint consumes the M20 onboard SLAM/LIO outputs that are bridged into
 DimOS as ``slam_aligned_points`` and ``slam_odom``. It does not subscribe to the
@@ -60,8 +60,6 @@ m20_overhead_clearance = m20_height_clearance + m20_overhead_safety_margin
 m20_max_step_height = 0.15
 m20_rotation_diameter = 1.2
 m20_safe_radius_margin = 0.1
-map_save_dir = Path(__file__).resolve().parent / "map_save"
-map_save_path = map_save_dir / "m20_accumulated_map.pcd"
 M20_MUJOCO_SIM_CONFIG_PATH = Path(__file__).resolve().parents[1] / "config/mujoco_sim.yaml"
 
 
@@ -95,19 +93,6 @@ _m20_slam_ray_tracer = RayTracingVoxelMap.blueprint(
         (RayTracingVoxelMap, "odometry", "dimos/slam_odom"),
     ]
 )
-
-# _m20_pointcloud_map_save = PointCloudMapSave.blueprint(
-#     translation_threshold_m=0.5,
-#     rotation_threshold_rad=math.radians(15.0),
-#     voxel_size=voxel_size,
-#     save_path=str(map_save_path),
-# ).remappings(
-#     [
-#         (PointCloudMapSave, "lidar", "dimos/slam_aligned_points"),
-#         (PointCloudMapSave, "odometry", "dimos/slam_odom"),
-#         (PointCloudMapSave, "global_map", "dimos/m20_saved_pointcloud_map"),
-#     ]
-# )
 
 
 def _render_path(msg: Any) -> Any:
@@ -164,56 +149,10 @@ def _mls_planner_blueprint(*, robot_height: float, wall_clearance_m: float) -> B
 _m20_dan_nav_core = autoconnect(
     _m20_dan_rerun,
     _m20_slam_ray_tracer,
-    # CostMapper.blueprint(
-    #     config=HeightCostConfig(
-    #         resolution=voxel_size,
-    #         can_pass_under=m20_overhead_clearance,
-    #         can_climb=m20_max_step_height,
-    #         ignore_noise=0.08,
-    #         smoothing=1.5,
-    #         min_gradient_neighbors=2,
-    #         ignore_overhead_only=True,
-    #     ),
-    #     initial_safe_radius_meters=m20_width_clearance + m20_safe_radius_margin,
-    # ),
-    # Bringup/debug fallback. FixedForwardPathPlanner mirrors the MLS planner's
-    # ports but ignores clicked goal positions and cycles through fixed local
-    # paths instead.
-    # FixedForwardPathPlanner.blueprint(
-    #     path_length_m=4.0,
-    #     sample_spacing_m=0.2,
-    #     corridor_radius_m=m20_width_clearance + m20_safe_radius_margin,
-    #     min_relative_z_m=-0.2,
-    #     max_relative_z_m=m20_overhead_clearance,
-    # ).remappings(
-    #     [
-    #         (FixedForwardPathPlanner, "path", "planner_path"),
-    #         # Keep the planner contract MLS-compatible while driving only from
-    #         # local_map + start/goal. The accumulated global map is not used.
-    #         (FixedForwardPathPlanner, "global_map", "global_map_unused"),
-    #     ]
-    # ),
     _mls_planner_blueprint(
         robot_height=m20_overhead_clearance,
         wall_clearance_m=m20_width_clearance + m20_safe_radius_margin,
     ),
-    # MLSPlannerNative.blueprint(
-    #     world_frame="map",
-    #     voxel_size=voxel_size,
-    #     robot_height=1.2,
-    #     wall_clearance_m=0.2,
-    #     wall_buffer_m=0.75,
-    #     wall_buffer_weight=100.0,
-    #     step_threshold_m=0.16,
-    #     step_penalty_weight=1.0,
-    #     viz_publish_hz=0.0,
-    # ).remappings(
-    #     [
-    #         (MLSPlannerNative, "path", "planner_path"),
-    #         # Use the incremental local_map + region_bounds pair from ray tracing.
-    #         (MLSPlannerNative, "global_map", "global_map_unused"),
-    #     ]
-    # ),
     OdomToPoseStamped.blueprint().remappings(
         [
             (OdomToPoseStamped, "odometry", "dimos/slam_odom"),

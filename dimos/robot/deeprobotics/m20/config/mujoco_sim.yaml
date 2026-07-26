@@ -1,4 +1,4 @@
-# Default profile for `dimos --rerun-open none run m20-dan-nav-sim`.
+# Default profile for `m20-simple-nav-sim` and `m20-dan-nav-sim`.
 # Values are validated at blueprint import. Restart DimOS after editing this file.
 
 m20mujocosimconnection:

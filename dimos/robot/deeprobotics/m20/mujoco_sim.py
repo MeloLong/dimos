@@ -14,9 +14,10 @@
 
 """MuJoCo-backed sensor/control adapter for testing the M20 navigation stack.
 
-This reuses the existing quadruped MuJoCo simulator as a navigation data source
-until a real M20 MuJoCo model is available. It publishes M20-shaped topics so
-the `m20-dan-nav` chain can be exercised without the robot.
+The shared DimOS MuJoCo process loads the vendored official M20 MJCF and ONNX
+policy. This adapter publishes the streams expected by the M20 Simple Nav and
+DAN blueprints and keeps simulation-only command tuning out of the real-robot
+connection.
 """
 
 from __future__ import annotations
