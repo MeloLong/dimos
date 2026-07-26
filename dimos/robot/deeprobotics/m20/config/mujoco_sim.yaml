@@ -18,7 +18,7 @@ m20mujocosimconnection:
   height: 360
 
   # RGB publication rate in frames per second. Point clouds use pointcloud_fps instead.
-  fps: 10.0
+  fps: 8.0
 
   # Vertical field of view of the RGB camera, in degrees.
   color_fov_deg: 45.0
@@ -46,8 +46,8 @@ m20mujocosimconnection:
   pointcloud_fps: 2.0
 
   # Azimuth samples per simulated outward sector and per Airy unit. The real sensor
-  # emits many more points; 128 keeps the VM navigation and Rerun streams responsive.
-  pointcloud_width: 128
+  # emits many more points; 64 avoids blocking RGB rendering on the CPU-only VM.
+  pointcloud_width: 64
 
   # Airy 96-beam mode. Exact beam angles remain device-calibration data.
   pointcloud_height: 96

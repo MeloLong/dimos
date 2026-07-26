@@ -63,19 +63,27 @@ def _sim_pointcloud_for_rerun(msg: Any) -> Any:
     return msg.voxel_downsample(0.10).to_rerun(voxel_size=0.10, mode="points")
 
 
-def m20_rerun_blueprint() -> Any:
+def _build_m20_rerun_blueprint(*, include_rear_camera: bool) -> Any:
     import rerun as rr
     import rerun.blueprint as rrb
 
+    camera_views = [
+        rrb.Spatial2DView(origin="world/color_image", name="M20 Front"),
+    ]
+    if include_rear_camera:
+        camera_views.append(rrb.Spatial2DView(origin="world/color_image_rear", name="M20 Rear"))
+
     return rrb.Blueprint(
         rrb.Horizontal(
-            rrb.Vertical(
-                rrb.Spatial2DView(origin="world/color_image", name="M20 Front"),
-                rrb.Spatial2DView(origin="world/color_image_rear", name="M20 Rear"),
-            ),
+            rrb.Vertical(*camera_views),
             rrb.Spatial3DView(
                 origin="world",
                 name="3D",
+                contents=[
+                    "+ $origin/**",
+                    "- $origin/color_image",
+                    "- $origin/color_image_rear",
+                ],
                 background=rrb.Background(kind="SolidColor", color=[0, 0, 0]),
                 line_grid=rrb.LineGrid3D(
                     plane=rr.components.Plane3D.XY.with_distance(0.5),
@@ -88,17 +96,25 @@ def m20_rerun_blueprint() -> Any:
     )
 
 
+def m20_rerun_blueprint() -> Any:
+    return _build_m20_rerun_blueprint(include_rear_camera=True)
+
+
+def m20_sim_rerun_blueprint() -> Any:
+    return _build_m20_rerun_blueprint(include_rear_camera=False)
+
+
 def build_m20_rerun(*, simulation: bool = False) -> Blueprint:
     max_hz = {
-        "world/color_image": 10 if simulation else 20,
-        "world/color_image_rear": 10 if simulation else 20,
+        "world/color_image": 0 if simulation else 20,
+        "world/color_image_rear": 0 if simulation else 20,
         "world/slam_aligned_points": 2.0 if simulation else 10.0,
         "world/global_map": 0.2 if simulation else 1.0,
         "world/local_map": 1.0 if simulation else 2.0,
     }
     low_fps_warn = {
-        "world/color_image": 9.0 if simulation else 20.0,
-        "world/color_image_rear": 9.0 if simulation else 20.0,
+        "world/color_image": 7.0 if simulation else 20.0,
+        "world/color_image_rear": 7.0 if simulation else 20.0,
         "world/slam_aligned_points": 1.8 if simulation else 9.8,
         "world/local_map": 0.9 if simulation else 4.5,
         "world/global_map": 0.18 if simulation else 0.8,
@@ -119,7 +135,7 @@ def build_m20_rerun(*, simulation: bool = False) -> Blueprint:
 
     return autoconnect(
         RerunBridgeModule.blueprint(
-            blueprint=m20_rerun_blueprint,
+            blueprint=m20_sim_rerun_blueprint if simulation else m20_rerun_blueprint,
             memory_limit="2GB",
             max_hz=max_hz,
             latest_only_entities=[

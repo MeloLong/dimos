@@ -375,7 +375,15 @@ class MujocoConnection:
         def get_video_as_image() -> Image | None:
             frame = self.get_video_frame()
             # MuJoCo renderer returns RGB uint8 frames; Image.from_numpy defaults to BGR.
-            return Image.from_numpy(frame, format=ImageFormat.RGB) if frame is not None else None
+            return (
+                Image.from_numpy(
+                    frame,
+                    format=ImageFormat.RGB,
+                    frame_id=self.sensor_config.color_frame_id,
+                )
+                if frame is not None
+                else None
+            )
 
         return self._create_stream(get_video_as_image, self.sensor_config.fps, "Video")
 

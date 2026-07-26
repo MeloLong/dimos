@@ -16,6 +16,10 @@ import yaml
 
 from dimos.mapping.costmapper import CostMapper
 from dimos.navigation.replanning_a_star.module import ReplanningAStarPlanner
+from dimos.robot.deeprobotics.m20.blueprints.basic import (
+    m20_rerun_blueprint,
+    m20_sim_rerun_blueprint,
+)
 from dimos.robot.deeprobotics.m20.connection import M20Connection
 from dimos.robot.deeprobotics.m20.mujoco_sim import M20MujocoSimConfig, M20MujocoSimConnection
 from dimos.robot.deeprobotics.m20.nav.m20_simple_nav import (
@@ -114,12 +118,13 @@ def test_simple_nav_sim_loads_checked_in_sensor_profile() -> None:
     assert simulator.kwargs["person_collision_enabled"] is False
     assert simulator.kwargs["publish_front_image"] is True
     assert simulator.kwargs["publish_rear_image"] is False
+    assert simulator.kwargs["fps"] == 8.0
     assert simulator.kwargs["pointcloud_camera_names"] == (
         "lidar_front_camera",
         "lidar_rear_camera",
     )
     assert simulator.kwargs["pointcloud_scan_pattern"] == "airy_hemisphere"
-    assert simulator.kwargs["pointcloud_width"] == 128
+    assert simulator.kwargs["pointcloud_width"] == 64
     assert simulator.kwargs["pointcloud_height"] == 96
     assert simulator.kwargs["pointcloud_fov_deg"] == 90.0
     assert simulator.kwargs["pointcloud_min_range_m"] == 0.1
@@ -131,13 +136,35 @@ def test_simple_nav_sim_uses_low_load_rerun_profile() -> None:
         atom for atom in m20_simple_nav_sim.blueprints if atom.module is RerunBridgeModule
     )
 
-    assert bridge.kwargs["max_hz"]["world/color_image"] == 10
+    assert bridge.kwargs["blueprint"] is m20_sim_rerun_blueprint
+    assert bridge.kwargs["max_hz"]["world/color_image"] == 0
     assert bridge.kwargs["max_hz"]["world/slam_aligned_points"] == 2.0
-    assert bridge.kwargs["debug_low_fps_warn"]["world/color_image"] == 9.0
+    assert bridge.kwargs["debug_low_fps_warn"]["world/color_image"] == 7.0
     assert bridge.kwargs["debug_low_fps_warn"]["world/slam_aligned_points"] == 1.8
     assert "world/slam_aligned_points" in bridge.kwargs["visual_override"]
     assert "world/local_map" in bridge.kwargs["visual_override"]
     assert "world/global_map" in bridge.kwargs["visual_override"]
+
+
+def test_rerun_blueprints_match_available_cameras() -> None:
+    real = m20_rerun_blueprint().root_container
+    simulation = m20_sim_rerun_blueprint().root_container
+
+    real_camera_views, real_3d = real.contents
+    sim_camera_views, sim_3d = simulation.contents
+
+    assert [view.name for view in real_camera_views.contents] == [
+        "M20 Front",
+        "M20 Rear",
+    ]
+    assert [view.name for view in sim_camera_views.contents] == ["M20 Front"]
+    expected_3d_contents = [
+        "+ $origin/**",
+        "- $origin/color_image",
+        "- $origin/color_image_rear",
+    ]
+    assert real_3d.contents == expected_3d_contents
+    assert sim_3d.contents == expected_3d_contents
 
 
 def test_simple_nav_sim_loads_checked_in_moving_obstacle_profile() -> None:
