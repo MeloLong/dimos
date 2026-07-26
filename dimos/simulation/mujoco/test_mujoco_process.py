@@ -75,7 +75,7 @@ def test_sensor_config_rejects_inverted_pointcloud_range() -> None:
         MujocoSensorConfig(pointcloud_min_range_m=5.0, pointcloud_max_range_m=5.0)
 
 
-def test_airy_ray_pattern_covers_360_by_90_degrees() -> None:
+def test_airy_ray_pattern_covers_camera_forward_180_by_90_degrees() -> None:
     directions = _hemispherical_ray_directions(192, 96, 90.0)
 
     assert directions.shape == (192 * 96, 3)
@@ -86,7 +86,7 @@ def test_airy_ray_pattern_covers_360_by_90_degrees() -> None:
     assert directions[:, 0].min() < -0.999
     assert directions[:, 0].max() > 0.999
     assert directions[:, 2].min() < -0.999
-    assert directions[:, 2].max() > 0.999
+    assert directions[:, 2].max() <= 1e-12
 
 
 def test_pointcloud_scan_shape_is_independent_from_rgb() -> None:

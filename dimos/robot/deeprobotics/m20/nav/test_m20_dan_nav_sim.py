@@ -18,6 +18,8 @@ from pydantic import ValidationError
 import pytest
 import yaml
 
+from dimos.msgs.geometry_msgs.Twist import Twist
+from dimos.msgs.geometry_msgs.Vector3 import Vector3
 from dimos.navigation.nav_3d.mls_planner.mls_planner_native import (
     MLSPlannerNative,
     MLSPlannerNativeConfig,
@@ -27,6 +29,7 @@ from dimos.robot.deeprobotics.m20.connection import M20Connection
 from dimos.robot.deeprobotics.m20.mujoco_sim import (
     M20MujocoSimConfig,
     M20MujocoSimConnection,
+    _adapt_yaw_command,
 )
 from dimos.robot.deeprobotics.m20.nav.m20_dan_nav import (
     M20_MUJOCO_SIM_CONFIG_PATH,
@@ -108,6 +111,32 @@ def test_sensor_parameters_are_projected_to_connection_config() -> None:
     assert sensors.pointcloud_voxel_size == 0.1
 
 
+@pytest.mark.parametrize(
+    ("input_yaw", "expected_yaw"),
+    [(0.55, 1.1), (0.8, 1.6), (1.6, 1.6), (-0.8, -1.6)],
+)
+def test_m20_sim_yaw_adapter_scales_and_limits_commands(
+    input_yaw: float, expected_yaw: float
+) -> None:
+    command = Twist(Vector3(0.4, -0.2, 0.1), Vector3(0.3, -0.4, input_yaw))
+
+    adjusted = _adapt_yaw_command(command, scale=2.0, limit=1.6)
+
+    assert adjusted.linear == command.linear
+    assert (adjusted.angular.x, adjusted.angular.y) == (
+        command.angular.x,
+        command.angular.y,
+    )
+    assert adjusted.angular.z == pytest.approx(expected_yaw)
+    assert command.angular.z == input_yaw
+
+
+@pytest.mark.parametrize("field", ["yaw_command_scale", "yaw_command_limit"])
+def test_m20_sim_rejects_nonpositive_yaw_settings(field: str) -> None:
+    with pytest.raises(ValidationError):
+        M20MujocoSimConfig(**{field: 0.0})
+
+
 def test_m20_navigation_sim_uses_lightweight_sensor_profile() -> None:
     atom = next(
         atom for atom in m20_dan_nav_sim.blueprints if atom.module is M20MujocoSimConnection
@@ -128,6 +157,8 @@ def test_m20_navigation_sim_uses_lightweight_sensor_profile() -> None:
     assert atom.kwargs["pointcloud_min_range_m"] == 0.1
     assert atom.kwargs["pointcloud_max_range_m"] == 10.0
     assert atom.kwargs["pointcloud_geom_groups"] == (0, 1)
+    assert atom.kwargs["yaw_command_scale"] == 2.0
+    assert atom.kwargs["yaw_command_limit"] == 1.6
 
 
 def test_m20_navigation_sim_loads_sensor_profile_from_yaml() -> None:

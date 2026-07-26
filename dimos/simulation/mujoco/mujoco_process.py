@@ -82,8 +82,8 @@ def _hemispherical_ray_directions(
     channels: int,
     vertical_fov_deg: float,
 ) -> NDArray[np.float64]:
-    """Generate a 360-degree scan in MuJoCo camera coordinates."""
-    azimuth = np.linspace(-math.pi, math.pi, azimuth_samples, endpoint=False)
+    """Generate a camera-forward 180 x vertical-FOV scan."""
+    azimuth = np.linspace(-math.pi / 2.0, math.pi / 2.0, azimuth_samples)
     elevation = np.linspace(
         -math.radians(vertical_fov_deg) / 2.0,
         math.radians(vertical_fov_deg) / 2.0,

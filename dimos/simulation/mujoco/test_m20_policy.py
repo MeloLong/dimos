@@ -17,6 +17,7 @@ from pathlib import Path
 import mujoco
 import numpy as np
 
+from dimos.simulation.mujoco.mujoco_process import _hemispherical_ray_directions
 from dimos.simulation.mujoco.policy import M20OnnxController
 
 
@@ -86,6 +87,19 @@ def test_m20_front_and_rear_depth_cameras_face_opposite_directions() -> None:
 
     np.testing.assert_allclose(front_view, [1.0, 0.0, 0.0], atol=1e-7)
     np.testing.assert_allclose(rear_view, [-1.0, 0.0, 0.0], atol=1e-7)
+
+
+def test_m20_front_and_rear_airy_sectors_point_outward() -> None:
+    model, data = _load_model()
+    directions = _hemispherical_ray_directions(128, 96, 90.0)
+    front_id = model.camera("lidar_front_camera").id
+    rear_id = model.camera("lidar_rear_camera").id
+
+    front_directions = directions @ data.cam_xmat[front_id].reshape(3, 3).T
+    rear_directions = directions @ data.cam_xmat[rear_id].reshape(3, 3).T
+
+    assert front_directions[:, 0].min() >= -1e-12
+    assert rear_directions[:, 0].max() <= 1e-12
 
 
 def test_m20_policy_observation_and_output_contract() -> None:

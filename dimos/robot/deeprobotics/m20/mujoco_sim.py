@@ -23,7 +23,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import model_validator
+from pydantic import Field, model_validator
 from reactivex.disposable import Disposable
 
 from dimos.core.core import rpc
@@ -45,6 +45,8 @@ class M20MujocoSimConfig(ModuleConfig, MujocoSensorConfig):
     publish_front_image: bool = True
     publish_rear_image: bool = False
     person_collision_enabled: bool = False
+    yaw_command_scale: float = Field(default=1.0, gt=0.0)
+    yaw_command_limit: float = Field(default=1.6, gt=0.0)
 
     @model_validator(mode="after")
     def validate_image_publication(self) -> M20MujocoSimConfig:
@@ -55,6 +57,12 @@ class M20MujocoSimConfig(ModuleConfig, MujocoSensorConfig):
     def sensor_config(self) -> MujocoSensorConfig:
         fields = set(MujocoSensorConfig.model_fields)
         return MujocoSensorConfig.model_validate(self.model_dump(include=fields))
+
+
+def _adapt_yaw_command(twist: Twist, scale: float, limit: float) -> Twist:
+    adjusted = Twist(twist)
+    adjusted.angular.z = max(-limit, min(limit, twist.angular.z * scale))
+    return adjusted
 
 
 class M20MujocoSimConnection(Module):
@@ -122,7 +130,12 @@ class M20MujocoSimConnection(Module):
     def move(self, twist: Twist, duration: float = 0.0) -> bool:
         if self.connection is None:
             return True
-        return self.connection.move(twist, duration)
+        adjusted = _adapt_yaw_command(
+            twist,
+            self.config.yaw_command_scale,
+            self.config.yaw_command_limit,
+        )
+        return self.connection.move(adjusted, duration)
 
     @rpc
     def publish_request(self, topic: str, data: dict[str, Any]) -> dict[Any, Any]:

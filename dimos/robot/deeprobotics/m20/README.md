@@ -43,6 +43,10 @@ defines a 360 x 90-degree hemispherical FOV, and the
 defines 96-channel mode, a 0.1-60 m decoder range, and per-device calibration
 angles. Neither official source publishes the M20 mounting transforms or a
 reusable MuJoCo model, so these streams remain an explicit approximation.
+To preserve the front/rear mount directions while robot geometry is excluded
+from raycasts, the simulation models each unit as an outward-facing 180 x
+90-degree sector. This avoids two duplicate full-azimuth scans through the
+chassis; it does not redefine the real Airy's 360 x 90-degree specification.
 
 ## Control-Fidelity Review
 
@@ -94,7 +98,7 @@ the correct policy-level remedy.
 | --- | --- | --- |
 | Official source and policy | Pass | BSD-3-Clause source audited; vendored ONNX is byte-identical to upstream and exposes `obs [1,57] -> actions [1,16]` |
 | Model and controller contract | Pass | `nq=23`, `nv=22`, `nu=16`; joint tree, inertia, limits, torque ranges, mapping, PD gains, and 20 ms policy cadence checked against the official runner |
-| Rendering and synthetic sensors | Pass | Front RGB plus two front/rear 96-channel, 360 x 90-degree hemispherical raycasts, nonempty point cloud, and no robot self-scan with groups `(0, 1)` |
+| Rendering and synthetic sensors | Pass | Front RGB plus two outward-facing front/rear 96-channel, 180 x 90-degree raycast sectors, nonempty point cloud, and no robot self-scan with groups `(0, 1)` |
 | DimOS integration | Pass | Expanded M20/MuJoCo suite: 70 default tests plus 1 explicit `mujoco` test; a Rerun-attached simple-nav run reached `(0, 1)` from `(-1.197, 1.002)` while RGB, lidar, local map, global map, and costmap streams remained live |
 | Packaging and docs | Pass | Wheel contains 21 M20 assets; pre-commit, LFS, large-file, and doclinks checks passed |
 | Standstill and forward | Pass | Zero command remains upright; `[0.2,0,0]` for 3 s moves `+0.4884 m` forward with `-0.0018 m` lateral drift |
@@ -233,12 +237,19 @@ uv run --no-sync dimos --rerun-open none run m20-simple-nav-sim \
 
 The normal profile publishes only front 640 x 360 RGB at 10 Hz and a merged
 front/rear point cloud at 2 Hz. Each simulated Airy uses 128 azimuth samples,
-96 vertical channels, a 360 x 90-degree hemispherical FOV, a 0.1 m minimum
-range, and a 10 m runtime cutoff. The real Airy supports a 60 m decoder range
-and a much denser point stream; the lower simulated rate and azimuth density
-keep navigation tests responsive. Exact factory beam angles, timing, noise,
-motion distortion, occlusion, and M20 mounting transforms are not reproduced.
-The mocap person is visible to sensors but does not collide with M20 by default.
+96 vertical channels, an outward-facing 180 x 90-degree sector, a 0.1 m minimum
+range, and a 10 m runtime cutoff. The real Airy supports 360 x 90-degree
+coverage, a 60 m decoder range, and a much denser point stream; the reduced
+simulation keeps navigation tests responsive and preserves the front/rear
+mount directions. Exact factory beam angles, timing, noise, motion distortion,
+occlusion, and M20 mounting transforms are not reproduced. The mocap person is
+visible to sensors but does not collide with M20 by default.
+
+The simulation profile multiplies yaw commands by `2.0` and caps them at
+`1.6 rad/s`. Normal Viewer teleop therefore maps from `0.8` to `1.6 rad/s`,
+while Shift fast mode remains capped at `1.6 rad/s`. Simple Nav's path-following
+limit maps from `0.55` to `1.1 rad/s`. This adapter changes only simulation
+commands and does not modify the official ONNX or real-robot control settings.
 
 ## Verification Checklist
 

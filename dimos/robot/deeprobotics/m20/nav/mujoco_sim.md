@@ -133,15 +133,17 @@ comments in that file document every checked-in parameter.
 | `publish_front_image` | `True` | Publish RGB as `color_image` |
 | `publish_rear_image` | `False` | Duplicate RGB to the rear topic; no rear renderer exists |
 | `width`, `height`, `fps` | `640`, `360`, `10` | Front RGB render size and rate |
+| `yaw_command_scale` | `2.0` | Simulation-only multiplier for `angular.z` commands |
+| `yaw_command_limit` | `1.6` | Simulation-only absolute yaw-command cap in rad/s |
 | `enable_pointcloud` | `True` | Run synthetic lidar and publish the merged point cloud |
-| `pointcloud_scan_pattern` | `airy_hemisphere` | Use a full-azimuth hemispherical MuJoCo ray pattern |
+| `pointcloud_scan_pattern` | `airy_hemisphere` | Use an outward-facing 180 x 90-degree MuJoCo ray sector |
 | `pointcloud_fps` | `2` | Synthetic point-cloud rate |
 | `pointcloud_width`, `pointcloud_height` | `128`, `96` | Reduced azimuth samples and Airy vertical channels per lidar |
 | `pointcloud_min_range_m` | `0.1` | Official Airy decoder minimum range |
 | `pointcloud_max_range_m` | `10` | Maximum retained depth hit distance for the office scene |
 | `pointcloud_camera_names` | front, rear | MuJoCo mount frames used as ray origins |
 | `pointcloud_geom_groups` | `[0, 1]` | MuJoCo geometry groups visible to lidar rays |
-| `pointcloud_fov_deg` | `90` | Official Airy vertical FOV; azimuth is 360 degrees |
+| `pointcloud_fov_deg` | `90` | Official Airy vertical FOV; simulated azimuth is 180 degrees per mount |
 | `pointcloud_voxel_size` | `0.05` | Open3D downsampling resolution in metres |
 
 The `mlsplannernative` section keeps the planner envelope consistent with the
@@ -172,9 +174,20 @@ The driver confirms 48/96/192 modes, defaults to 96 channels, accepts distances
 from 0.1 to 60 m at 0.005 m resolution, and loads 96 vertical plus 96 horizontal
 calibration angles from DIFOP. No official Airy MuJoCo/Gazebo configuration or
 M20 mounting transforms are published. The simulator therefore uses uniform
-elevation and azimuth samples, limits range to 10 m, and publishes at 2 Hz. It
-does not reproduce factory beam calibration, full point rate, scan timing,
-noise, blind zones, occlusion, or motion distortion.
+elevation and azimuth samples, limits range to 10 m, and publishes at 2 Hz.
+Because robot geometry is excluded from raycasts, each mount uses only its
+forward 180-degree sector; otherwise the front and rear full-azimuth sets would
+duplicate one another through the chassis. This is a simulation approximation,
+not a change to the real sensor specification. It does not reproduce factory
+beam calibration, full point rate, scan timing, noise, blind zones, occlusion,
+or motion distortion.
+
+Normal Viewer teleop publishes `0.8 rad/s` yaw and Shift fast mode publishes
+`1.6 rad/s`. The M20 simulation adapter applies the checked-in `2.0` multiplier
+and `1.6 rad/s` cap, so normal and fast teleop both reach the policy input cap.
+Simple Nav's `0.55 rad/s` path-following limit becomes `1.1 rad/s`. The adapter
+does not modify the official M20 ONNX, and the known signed-yaw response
+asymmetry remains a separate policy-fidelity limitation.
 
 The low-load profile was measured on the same ARM VM with headless EGL MuJoCo
 and the native Rerun viewer using software-rendered `llvmpipe`:

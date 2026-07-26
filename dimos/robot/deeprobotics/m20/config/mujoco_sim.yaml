@@ -29,16 +29,23 @@ m20mujocosimconnection:
   # Publish the same RGB renderer on color_image_rear. Keep false because this model has no rear RGB camera.
   publish_rear_image: false
 
+  # Match the Viewer fast-turn feel for normal teleop and navigation commands.
+  # This is a simulation-only adapter; the official M20 policy is unchanged.
+  yaw_command_scale: 2.0
+  yaw_command_limit: 1.6
+
   # Master switch for synthetic lidar and point-cloud generation.
   enable_pointcloud: true
 
-  # Airy uses a 360 x 90-degree hemispherical scan rather than a perspective depth image.
+  # Simulate each Airy as an outward-facing 180 x 90-degree sector. The real
+  # sensor is 360 x 90, but a full ray set on both mounts duplicates coverage
+  # because robot geometry is intentionally excluded from synthetic raycasts.
   pointcloud_scan_pattern: airy_hemisphere
 
   # Synthetic point-cloud publication rate in frames per second.
   pointcloud_fps: 2.0
 
-  # Azimuth samples per simulated revolution and per Airy unit. The real sensor
+  # Azimuth samples per simulated outward sector and per Airy unit. The real sensor
   # emits many more points; 128 keeps the VM navigation and Rerun streams responsive.
   pointcloud_width: 128
 
@@ -59,8 +66,8 @@ m20mujocosimconnection:
   # allowing its kinematic, effectively infinite-mass body to push over M20.
   person_collision_enabled: false
 
-  # Official Airy vertical field of view. Azimuth coverage is always 360 degrees
-  # in airy_hemisphere mode.
+  # Official Airy vertical field of view. Simulated azimuth coverage is 180 degrees
+  # around each lidar mount's forward axis in airy_hemisphere mode.
   pointcloud_fov_deg: 90.0
 
   # Official Airy decoder minimum range.
